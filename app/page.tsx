@@ -20,7 +20,7 @@ export default function Home() {
           </h1>
           
           <p className="text-white/70 mt-6 text-sm">
-            Etwas Großartiges ist in Arbeit...
+            Etwas Großartiges ist in Arbeit.....
           </p>
 
           {/* Logout Button (optional) */}
