@@ -1,8 +1,8 @@
- 'use client'
+'use client'
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { useRouter } from 'next/navigation'
+import Header from '@/components/Header'
 
 interface Match {
   id: number
@@ -31,7 +31,6 @@ export default function MatchdayPage() {
   const [bl2Matches, setBl2Matches] = useState<Match[]>([])
   const [availableMatchdays, setAvailableMatchdays] = useState<number[]>([])
   const [loading, setLoading] = useState(true)
-  const router = useRouter()
 
   // Lade verfügbare Spieltage
   useEffect(() => {
@@ -67,7 +66,7 @@ export default function MatchdayPage() {
       setLoading(true)
       
       // 1. Bundesliga
-      const { data: bl1Data, error: bl1Error } = await supabase
+      const { data: bl1Data } = await supabase
         .from('matches')
         .select(`
           *,
@@ -79,7 +78,7 @@ export default function MatchdayPage() {
         .order('match_date', { ascending: true })
       
       // 2. Bundesliga
-      const { data: bl2Data, error: bl2Error } = await supabase
+      const { data: bl2Data } = await supabase
         .from('matches')
         .select(`
           *,
@@ -100,12 +99,6 @@ export default function MatchdayPage() {
       fetchMatches()
     }
   }, [selectedMatchday])
-
-  const handleLogout = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' })
-    router.push('/login')
-    router.refresh()
-  }
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
@@ -160,7 +153,7 @@ export default function MatchdayPage() {
         <div className="mt-2 text-center">
           {match.result === 'x' ? (
             <span className="inline-block px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-semibold">
-              ✓ Unentschieden
+              Unentschieden
             </span>
           ) : (
             <span className="inline-block px-3 py-1 bg-slate-100 text-slate-600 rounded-full text-xs">
@@ -174,20 +167,7 @@ export default function MatchdayPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
-      {/* Header */}
-      <div className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center">
-            <h1 className="text-2xl font-bold text-slate-800">MonBetsX</h1>
-            <button
-              onClick={handleLogout}
-              className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800 transition"
-            >
-              Abmelden
-            </button>
-          </div>
-        </div>
-      </div>
+      <Header />
 
       <div className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
         {/* Spieltag-Auswahl */}
