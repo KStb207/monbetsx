@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import Header from '@/components/Header'
 
@@ -164,59 +164,58 @@ export default function BetsPage() {
   }
 
   const handleSaveOdds = async (matchId: number, odds: number, match: Match) => {
-    setSavingMatchId(matchId)
+  setSavingMatchId(matchId)
+  
+  try {
+    // Upsert in bets Tabelle - MIT home_stake, away_stake, total_stake
+    const { error } = await supabase
+      .from('bets')
+      .upsert({
+        match_id: matchId,
+        matchday: selectedMatchday,
+        season: '2025',
+        odds: odds,
+        home_stake: match.home_stake,
+        away_stake: match.away_stake,
+        total_stake: match.total_stake
+      }, {
+        onConflict: 'match_id'
+      })
     
-    try {
-      // Upsert in bets Tabelle - MIT home_stake, away_stake, total_stake
-      const { error } = await supabase
-        .from('bets')
-        .upsert({
-          match_id: matchId,
-          matchday: selectedMatchday,
-          season: '2025',
-          odds: odds,
-          home_stake: match.home_stake,
-          away_stake: match.away_stake,
-          total_stake: match.total_stake
-        }, {
-          onConflict: 'match_id'
-        })
-      
-      if (error) throw error
-      
-      // Aktualisiere lokalen State
-      const updateMatches = (matches: Match[]) =>
-        matches.map(m => m.id === matchId ? { ...m, odds } : m)
-      
-      setBl1Matches(updateMatches)
-      setBl2Matches(updateMatches)
-      
-      // Prüfe ob Alternative nötig ist
-      if (match.total_stake > 550) {
-        const alternative = calculateAlternativeStake(match.total_stake, odds)
-        setAlternativeStakes(prev => new Map(prev).set(matchId, {
-          matchId,
-          alternativeAmount: alternative,
-          originalStake: match.total_stake,
-          quote: odds
-        }))
-      } else {
-        // Entferne Alternative falls vorhanden
-        setAlternativeStakes(prev => {
-          const newMap = new Map(prev)
-          newMap.delete(matchId)
-          return newMap
-        })
-      }
-      
-      // KEINE MELDUNG MEHR
-    } catch (error) {
-      console.error('Fehler beim Speichern:', error)
-      alert('Fehler beim Speichern der Quote')
-    } finally {
-      setSavingMatchId(null)
+    if (error) throw error
+    
+    // Aktualisiere lokalen State
+    const updateMatches = (matches: Match[]) =>
+      matches.map(m => m.id === matchId ? { ...m, odds } : m)
+    
+    setBl1Matches(updateMatches)
+    setBl2Matches(updateMatches)
+    
+    // Prüfe ob mindestens ein Team über 250€ ist
+    if (match.home_stake > 250 || match.away_stake > 250) {
+      const alternative = calculateAlternativeStake(match.total_stake, odds)
+      setAlternativeStakes(prev => new Map(prev).set(matchId, {
+        matchId,
+        alternativeAmount: alternative,
+        originalStake: match.total_stake,
+        quote: odds
+      }))
+    } else {
+      // Entferne Alternative falls vorhanden
+      setAlternativeStakes(prev => {
+        const newMap = new Map(prev)
+        newMap.delete(matchId)
+        return newMap
+      })
     }
+    
+  } catch (error) {
+    console.error('Fehler beim Speichern:', error)
+    alert('Fehler beim Speichern der Quote')
+  } finally {
+    setSavingMatchId(null)
   }
+}
 
   const handleAcceptAlternative = (matchId: number) => {
     setModalMatchId(matchId)
@@ -334,226 +333,402 @@ export default function BetsPage() {
     }).format(amount)
   }
 
-  const BetCard = ({ match }: { match: Match }) => {
-    const [oddsInput, setOddsInput] = useState<string>(match.odds?.toString() || '3.40')
-    const alternative = alternativeStakes.get(match.id)
-    const isAlreadyBet = match.odds !== null && match.odds !== undefined
+	const BetCard = ({ match }: { match: Match }) => {
+  const [oddsInput, setOddsInput] = useState<string>(match.odds?.toString() || '3.40')
+  const alternative = alternativeStakes.get(match.id)
+  const isAlreadyBet = match.odds !== null && match.odds !== undefined
+  const cardRef = useRef<HTMLDivElement>(null)
 
-    useEffect(() => {
-      setOddsInput(match.odds?.toString() || '3.40')
-    }, [match.odds])
+  // Prüfe welches Team über 250€ hat
+  const homeTeamOver250 = match.home_stake > 250
+  const awayTeamOver250 = match.away_stake > 250
+  const anyTeamOver250 = homeTeamOver250 || awayTeamOver250
 
-    return (
-      <div className="bg-white rounded-lg shadow-sm border border-slate-200 hover:shadow-md transition">
-        <div className="p-4">
-          {/* Spielinfo Header */}
-          <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-100">
-            <div className="text-xs text-slate-500">
-              {match.is_finished ? (
-                <span className="px-2 py-1 bg-slate-100 rounded-full">Beendet</span>
-              ) : (
-                <span>{formatDate(match.match_date)}</span>
-              )}
-            </div>
-            {match.is_finished && match.result && (
-              <div className="text-xs">
-                {match.result === 'x' ? (
-                  <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full font-semibold">
-                    Unentschieden
-                  </span>
-                ) : (
-                  <span className="px-2 py-1 bg-slate-100 text-slate-600 rounded-full">
-                    {match.result === '1' ? 'Heimsieg' : 'Auswärtssieg'}
-                  </span>
-                )}
-              </div>
+  // Berechne Alternative on-the-fly wenn Team über 250€
+  const currentOdds = parseFloat(oddsInput) || 3.40
+  const calculatedAlternative = anyTeamOver250 ? calculateAlternativeStake(match.total_stake, currentOdds) : null
+
+  useEffect(() => {
+    setOddsInput(match.odds?.toString() || '3.40')
+  }, [match.odds])
+
+  const handleAbort = async () => {
+    try {
+      // Bestimme welches Team abgebrochen werden soll
+      const teamToAbort = homeTeamOver250 ? 'home' : 'away'
+      const teamName = homeTeamOver250 ? match.home_team.short_name : match.away_team.short_name
+
+      // Setze Abbruch in bets Tabelle
+      const { error } = await supabase
+        .from('bets')
+        .update({
+          [teamToAbort === 'home' ? 'home_team_abort' : 'away_team_abort']: true
+        })
+        .eq('match_id', match.id)
+
+      if (error) throw error
+
+      // Entferne Alternative
+      setAlternativeStakes(prev => {
+        const newMap = new Map(prev)
+        newMap.delete(match.id)
+        return newMap
+      })
+
+      alert(`Abbruch für ${teamName} erfolgreich! Einsatz wird beim nächsten Spieltag auf 0,50 € zurückgesetzt.`)
+      
+      // Reload data
+      window.location.reload()
+    } catch (error) {
+      console.error('Fehler beim Abbruch:', error)
+      alert('Fehler beim Abbruch des Teams')
+    }
+  }
+
+  const handleQuoteAdjust = () => {
+    // Öffne Modal für Anpassung
+    handleAcceptAlternative(match.id)
+  }
+
+  return (
+    <div ref={cardRef} className="bg-white rounded-lg shadow-sm border border-slate-200 hover:shadow-md transition">
+      <div className="p-4">
+        {/* Spielinfo Header */}
+        <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-100">
+          <div className="text-xs text-slate-500">
+            {match.is_finished ? (
+              <span className="px-2 py-1 bg-slate-100 rounded-full">Beendet</span>
+            ) : (
+              <span>{formatDate(match.match_date)}</span>
             )}
           </div>
-
-          {/* Teams & Einsätze - Kompakt */}
-          <div className="space-y-2 mb-3">
-            {/* Heimteam */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 flex-1">
-                <span className="font-semibold text-slate-800 text-sm">
-                  {match.home_team.short_name}
+          {match.is_finished && match.result && (
+            <div className="text-xs">
+              {match.result === 'x' ? (
+                <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full font-semibold">
+                  Unentschieden
                 </span>
-                {match.is_finished && (
-                  <span className={`text-lg font-bold ${
-                    match.result === 'x' ? 'text-green-600' : 'text-slate-600'
-                  }`}>
-                    {match.home_goals}
-                  </span>
-                )}
-              </div>
-              <span className="text-sm font-bold text-blue-600">
-                {formatCurrency(match.home_stake)}
-              </span>
-            </div>
-
-            {/* Auswärtsteam */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 flex-1">
-                <span className="font-semibold text-slate-800 text-sm">
-                  {match.away_team.short_name}
+              ) : (
+                <span className="px-2 py-1 bg-slate-100 text-slate-600 rounded-full">
+                  {match.result === '1' ? 'Heimsieg' : 'Auswärtssieg'}
                 </span>
-                {match.is_finished && (
-                  <span className={`text-lg font-bold ${
-                    match.result === 'x' ? 'text-green-600' : 'text-slate-600'
-                  }`}>
-                    {match.away_goals}
-                  </span>
-                )}
-              </div>
-              <span className="text-sm font-bold text-blue-600">
-                {formatCurrency(match.away_stake)}
-              </span>
-            </div>
-          </div>
-
-          {/* Gesamteinsatz */}
-          <div className="flex items-center justify-between mb-3 pt-2 border-t border-slate-100">
-            <span className="text-xs font-medium text-slate-600">Gesamteinsatz</span>
-            <span className={`text-base font-bold ${
-              match.total_stake > 250 ? 'text-orange-600' : 'text-slate-800'
-            }`}>
-              {formatCurrency(match.total_stake)}
-            </span>
-          </div>
-
-          {/* Quote Input - Kompakt mit SCHWARZER Schrift */}
-          <div className="flex items-center gap-2 mb-3">
-            <label className="text-xs font-medium text-slate-600 min-w-[40px]">
-              Quote
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              min="1.00"
-              max="99.99"
-              value={oddsInput}
-              onChange={(e) => setOddsInput(e.target.value)}
-              disabled={isAlreadyBet}
-              className={`flex-1 px-2 py-1.5 text-sm text-slate-900 font-medium border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none ${
-                isAlreadyBet 
-                  ? 'bg-slate-100 border-slate-200 cursor-not-allowed' 
-                  : 'bg-white border-slate-300'
-              }`}
-              placeholder="3.40"
-            />
-            <button
-              onClick={() => {
-                const odds = parseFloat(oddsInput)
-                if (isNaN(odds) || odds < 1 || odds > 99.99) {
-                  alert('Bitte gültige Quote eingeben (1.00 - 99.99)')
-                  return
-                }
-                handleSaveOdds(match.id, odds, match)
-              }}
-              disabled={savingMatchId === match.id || isAlreadyBet}
-              className={`px-3 py-1.5 text-xs rounded-lg transition font-medium whitespace-nowrap ${
-                isAlreadyBet
-                  ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
-                  : 'bg-blue-600 hover:bg-blue-700 text-white'
-              } disabled:bg-slate-400`}
-            >
-              {savingMatchId === match.id ? '...' : isAlreadyBet ? 'Bereits getippt' : 'Speichern'}
-            </button>
-          </div>
-
-          {/* Alternative Einsatz */}
-          {alternative && (
-            <div className="mt-3 pt-3 border-t border-orange-200 bg-orange-50 -mx-4 -mb-4 px-4 py-3 rounded-b-lg">
-              <div className="text-xs font-semibold text-orange-800 mb-2">
-                Alternativer Einsatz vorgeschlagen:
-              </div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs text-slate-600">Neuer Gesamteinsatz:</span>
-                <span className="text-sm font-bold text-orange-700">
-                  {formatCurrency(alternative.alternativeAmount)}
-                </span>
-              </div>
-              <div className="text-xs text-slate-500 mb-3">
-                Berechnung: ({formatCurrency(alternative.originalStake)} × 3) ÷ {alternative.quote.toFixed(2)}
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => handleAcceptAlternative(match.id)}
-                  className="flex-1 px-3 py-2 text-xs bg-green-600 hover:bg-green-700 text-white rounded-lg transition font-medium"
-                >
-                  Annehmen
-                </button>
-                <button
-                  onClick={() => handleDeclineAlternative(match.id)}
-                  className="flex-1 px-3 py-2 text-xs bg-slate-400 hover:bg-slate-500 text-white rounded-lg transition font-medium"
-                >
-                  Ablehnen
-                </button>
-              </div>
+              )}
             </div>
           )}
         </div>
-      </div>
-    )
-  }
 
-  // Modal Component
-  const Modal = () => {
-    if (!showModal || !modalMatchId) return null
+        {/* Teams & Einsätze - KOMPAKTER mit Tab-Stop Ausrichtung */}
+<div className="flex items-start gap-4 mb-3">
+  {/* Teams mit Einsätzen - Tab-Stop Style */}
+  <div className="flex-1 space-y-2">
+    {/* Heimteam */}
+    <div className="flex items-center">
+      <span className={`font-semibold text-sm w-32 ${
+        homeTeamOver250 ? 'text-orange-600' : 'text-slate-800'
+      }`}>
+        {match.home_team.short_name}
+      </span>
+      <span className={`text-sm font-bold ml-2 ${
+        homeTeamOver250 ? 'text-orange-600' : 'text-blue-600'
+      }`}>
+        {formatCurrency(match.home_stake)}
+      </span>
+    </div>
 
-    const match = [...bl1Matches, ...bl2Matches].find(m => m.id === modalMatchId)
-    if (!match) return null
+    {/* Auswärtsteam */}
+    <div className="flex items-center">
+      <span className={`font-semibold text-sm w-32 ${
+        awayTeamOver250 ? 'text-orange-600' : 'text-slate-800'
+      }`}>
+        {match.away_team.short_name}
+      </span>
+      <span className={`text-sm font-bold ml-2 ${
+        awayTeamOver250 ? 'text-orange-600' : 'text-blue-600'
+      }`}>
+        {formatCurrency(match.away_stake)}
+      </span>
+    </div>
+  </div>
 
-    return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
-          <h3 className="text-lg font-bold text-slate-800 mb-4">
-            Welchen Einsatz verringern?
-          </h3>
-          
-          <p className="text-sm text-slate-600 mb-6">
-            Wählen Sie das Team aus, dessen Einsatz angepasst werden soll:
-          </p>
+  {/* Ergebnis - Links vom Gesamteinsatz */}
+  {match.is_finished && (
+    <div className="flex flex-col items-center justify-center gap-1 min-w-[40px]">
+      <span className="text-base font-bold text-slate-900">
+        {match.home_goals}
+      </span>
+      <span className="text-base font-bold text-slate-900">
+        {match.away_goals}
+      </span>
+    </div>
+  )}
 
-          <div className="space-y-3">
-            <button
-              onClick={() => handleReduceStake(modalMatchId, 'home')}
-              className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition font-medium text-left"
-            >
-              <div className="flex justify-between items-center">
-                <span>{match.home_team.short_name}</span>
-                <span className="text-sm opacity-80">
-                  Aktuell: {formatCurrency(match.home_stake)}
-                </span>
-              </div>
-            </button>
+  {/* Gesamteinsatz - Rechts */}
+  <div className="flex flex-col items-end justify-center min-w-[80px]">
+    <span className="text-xs text-slate-500 mb-1">Gesamt</span>
+    <span className={`text-lg font-bold ${
+      anyTeamOver250 ? 'text-orange-600' : 'text-slate-800'
+    }`}>
+      {formatCurrency(match.total_stake)}
+    </span>
+  </div>
+</div>
 
-            <button
-              onClick={() => handleReduceStake(modalMatchId, 'away')}
-              className="w-full px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition font-medium text-left"
-            >
-              <div className="flex justify-between items-center">
-                <span>{match.away_team.short_name}</span>
-                <span className="text-sm opacity-80">
-                  Aktuell: {formatCurrency(match.away_stake)}
-                </span>
-              </div>
-            </button>
-          </div>
-
+        {/* Quote Input - Kompakt mit SCHWARZER Schrift */}
+        <div className="flex items-center gap-2 mb-3 pt-2 border-t border-slate-100">
+          <label className="text-xs font-medium text-slate-600 min-w-[40px]">
+            Quote
+          </label>
+          <input
+            type="number"
+            step="0.01"
+            min="1.00"
+            max="99.99"
+            value={oddsInput}
+            onChange={(e) => setOddsInput(e.target.value)}
+            disabled={isAlreadyBet}
+            className={`flex-1 px-2 py-1.5 text-sm text-slate-900 font-medium border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none ${
+              isAlreadyBet 
+                ? 'bg-slate-100 border-slate-200 cursor-not-allowed' 
+                : 'bg-white border-slate-300'
+            }`}
+            placeholder="3.40"
+          />
           <button
             onClick={() => {
-              setShowModal(false)
-              setModalMatchId(null)
+              const odds = parseFloat(oddsInput)
+              if (isNaN(odds) || odds < 1 || odds > 99.99) {
+                alert('Bitte gültige Quote eingeben (1.00 - 99.99)')
+                return
+              }
+              
+              // Speichere Scroll-Position RELATIV zur Card
+              const cardElement = cardRef.current
+              if (cardElement) {
+                const cardTop = cardElement.getBoundingClientRect().top
+                const scrollOffset = window.scrollY + cardTop
+                
+                handleSaveOdds(match.id, odds, match)
+                
+                setTimeout(() => {
+                  window.scrollTo({
+                    top: scrollOffset - 100,
+                    behavior: 'smooth'
+                  })
+                }, 100)
+              } else {
+                handleSaveOdds(match.id, odds, match)
+              }
             }}
-            className="w-full mt-4 px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg transition font-medium"
+            disabled={savingMatchId === match.id || isAlreadyBet}
+            className={`px-3 py-1.5 text-xs rounded-lg transition font-medium whitespace-nowrap ${
+              isAlreadyBet
+                ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                : 'bg-blue-600 hover:bg-blue-700 text-white'
+            } disabled:bg-slate-400`}
           >
-            Abbrechen
+            {savingMatchId === match.id ? '...' : isAlreadyBet ? 'Bereits getippt' : 'Speichern'}
           </button>
         </div>
+
+        {/* Optionen bei zu hohem Einsatz - ZEIGE IMMER WENN ÜBER 250€ */}
+        {anyTeamOver250 && (
+          <div className="mt-3 pt-3 border-t border-orange-200 bg-orange-50 -mx-4 -mb-4 px-4 py-3 rounded-b-lg">
+            <div className="text-xs font-semibold text-orange-800 mb-2">
+              ⚠️ Einsatz über 250€ - Aktion erforderlich:
+            </div>
+            
+            {/* Info welches Team betroffen ist */}
+            <div className="text-xs text-slate-600 mb-3">
+              {homeTeamOver250 && (
+                <span className="font-semibold text-orange-700">
+                  {match.home_team.short_name}: {formatCurrency(match.home_stake)}
+                </span>
+              )}
+              {homeTeamOver250 && awayTeamOver250 && <span> und </span>}
+              {awayTeamOver250 && (
+                <span className="font-semibold text-orange-700">
+                  {match.away_team.short_name}: {formatCurrency(match.away_stake)}
+                </span>
+              )}
+            </div>
+
+            {/* Alternative Einsatz Info */}
+            {calculatedAlternative && (
+              <>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs text-slate-600">Alternativer Gesamteinsatz:</span>
+                  <span className="text-sm font-bold text-orange-700">
+                    {formatCurrency(calculatedAlternative)}
+                  </span>
+                </div>
+                <div className="text-xs text-slate-500 mb-3">
+                  Berechnung: ({formatCurrency(match.total_stake)} × 3) ÷ {currentOdds.toFixed(2)}
+                </div>
+              </>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex gap-2">
+              <button
+                onClick={handleQuoteAdjust}
+                className="flex-1 px-3 py-2 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition font-medium"
+              >
+                Einsatz anpassen
+              </button>
+              <button
+                onClick={handleAbort}
+                className="flex-1 px-3 py-2 text-xs bg-red-600 hover:bg-red-700 text-white rounded-lg transition font-medium"
+              >
+                Abbruch ({homeTeamOver250 ? match.home_team.short_name : match.away_team.short_name})
+              </button>
+            </div>
+          </div>
+        )}
       </div>
-    )
+    </div>
+  )
+}
+	
+  // Modal Component
+const Modal = () => {
+  if (!showModal || !modalMatchId) return null
+
+  const match = [...bl1Matches, ...bl2Matches].find(m => m.id === modalMatchId)
+  if (!match) return null
+
+  const alternative = alternativeStakes.get(modalMatchId)
+
+  const handleAbort = async (teamToAbort: 'home' | 'away') => {
+    try {
+      // Setze Abbruch in bets Tabelle
+      const { error } = await supabase
+        .from('bets')
+        .update({
+          [teamToAbort === 'home' ? 'home_team_abort' : 'away_team_abort']: true
+        })
+        .eq('match_id', modalMatchId)
+
+      if (error) throw error
+
+      // Aktualisiere lokalen State
+      const updateMatches = (matches: Match[]) =>
+        matches.map(m => {
+          if (m.id === modalMatchId) {
+            if (teamToAbort === 'home') {
+              return {
+                ...m,
+                home_stake: 0.5, // Wird im nächsten Spieltag auf 0.5 gesetzt
+                total_stake: 0.5 + m.away_stake
+              }
+            } else {
+              return {
+                ...m,
+                away_stake: 0.5,
+                total_stake: m.home_stake + 0.5
+              }
+            }
+          }
+          return m
+        })
+
+      setBl1Matches(updateMatches)
+      setBl2Matches(updateMatches)
+
+      // Entferne Alternative
+      setAlternativeStakes(prev => {
+        const newMap = new Map(prev)
+        newMap.delete(modalMatchId)
+        return newMap
+      })
+
+      setShowModal(false)
+      setModalMatchId(null)
+      
+      alert('Abbruch erfolgreich! Einsatz wird beim nächsten Spieltag auf 0,50 € zurückgesetzt.')
+    } catch (error) {
+      console.error('Fehler beim Abbruch:', error)
+      alert('Fehler beim Abbruch des Teams')
+    }
   }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+        <h3 className="text-lg font-bold text-slate-800 mb-4">
+          Einsatz anpassen
+        </h3>
+        
+        <p className="text-sm text-slate-600 mb-6">
+          Wählen Sie eine Option für die Einsatzanpassung:
+        </p>
+
+        <div className="space-y-3">
+          {/* Heimteam */}
+          <div className="border border-slate-200 rounded-lg p-4">
+            <div className="flex justify-between items-center mb-3">
+              <span className="font-semibold text-slate-800">{match.home_team.short_name}</span>
+              <span className="text-sm text-slate-600">
+                Aktuell: {formatCurrency(match.home_stake)}
+              </span>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleReduceStake(modalMatchId, 'home')}
+                className="flex-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition text-sm font-medium"
+              >
+                Anpassen
+              </button>
+              {match.home_stake >= 125 && (
+                <button
+                  onClick={() => handleAbort('home')}
+                  className="flex-1 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition text-sm font-medium"
+                >
+                  Abbruch
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Auswärtsteam */}
+          <div className="border border-slate-200 rounded-lg p-4">
+            <div className="flex justify-between items-center mb-3">
+              <span className="font-semibold text-slate-800">{match.away_team.short_name}</span>
+              <span className="text-sm text-slate-600">
+                Aktuell: {formatCurrency(match.away_stake)}
+              </span>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleReduceStake(modalMatchId, 'away')}
+                className="flex-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition text-sm font-medium"
+              >
+                Anpassen
+              </button>
+              {match.away_stake >= 125 && (
+                <button
+                  onClick={() => handleAbort('away')}
+                  className="flex-1 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition text-sm font-medium"
+                >
+                  Abbruch
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <button
+          onClick={() => {
+            setShowModal(false)
+            setModalMatchId(null)
+          }}
+          className="w-full mt-4 px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg transition font-medium"
+        >
+          Abbrechen
+        </button>
+      </div>
+    </div>
+  )
+}
 
   // Berechne Statistiken
   const calculateStats = (matches: Match[]) => {
