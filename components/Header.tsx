@@ -36,16 +36,6 @@ export default function Header() {
                 Übersicht
               </Link>
               <Link
-                href="/teams"
-                className={`text-sm font-medium transition ${
-                  pathname === '/teams'
-                    ? 'text-blue-600 border-b-2 border-blue-600 pb-1'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Teams
-              </Link>
-              <Link
                 href="/bets"
                 className={`text-sm font-medium transition ${
                   pathname === '/bets'
@@ -54,6 +44,16 @@ export default function Header() {
                 }`}
               >
                 Wetten
+              </Link>
+              <Link
+                href="/teams"
+                className={`text-sm font-medium transition ${
+                  pathname === '/teams'
+                    ? 'text-blue-600 border-b-2 border-blue-600 pb-1'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Teamsettings
               </Link>
               <Link
                 href="/statistics"
@@ -105,16 +105,6 @@ export default function Header() {
                 Übersicht
               </Link>
               <Link
-                href="/teams"
-                className={`flex-1 text-center px-2 py-2 text-xs font-medium transition rounded-lg ${
-                  pathname === '/teams'
-                    ? 'bg-blue-600 text-white'
-                    : 'text-slate-600 hover:bg-slate-100'
-                }`}
-              >
-                Teams
-              </Link>
-              <Link
                 href="/bets"
                 className={`flex-1 text-center px-2 py-2 text-xs font-medium transition rounded-lg ${
                   pathname === '/bets'
@@ -123,6 +113,16 @@ export default function Header() {
                 }`}
               >
                 Wetten
+              </Link>
+              <Link
+                href="/teams"
+                className={`flex-1 text-center px-2 py-2 text-xs font-medium transition rounded-lg ${
+                  pathname === '/teams'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                Teamsettings
               </Link>
               <Link
                 href="/statistics"
