@@ -51,9 +51,7 @@ const TeamRow = memo(({
             value={inputValue}
             onChange={(e) => {
               const value = e.target.value
-              // Erlaube leeren String oder nur Zahlen
               if (value === '' || /^[0-9]+$/.test(value)) {
-                // Prüfe ob Wert im gültigen Bereich
                 const num = parseInt(value)
                 if (value === '' || (num >= 0 && num <= 34)) {
                   onInputChange(team.id, value)
@@ -77,15 +75,12 @@ export default function TeamsPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [calculating, setCalculating] = useState(false)
+  const [recalculating, setRecalculating] = useState(false)
   
-  // Toggler States
   const [showBl1, setShowBl1] = useState(true)
   const [showBl2, setShowBl2] = useState(true)
 
-  // Input Werte - Schlüssel ist team.id
   const [inputValues, setInputValues] = useState<Record<number, string>>({})
-  
-  // Original Werte zum Vergleich
   const [originalValues, setOriginalValues] = useState<Record<number, number>>({})
 
   useEffect(() => {
@@ -93,7 +88,6 @@ export default function TeamsPage() {
       setLoading(true)
       
       try {
-        // 1. Hole alle Teams
         const { data: teams } = await supabase
           .from('teams')
           .select('*')
@@ -101,14 +95,12 @@ export default function TeamsPage() {
 
         if (!teams) return
 
-        // 2. Hole alle Matches mit Ergebnissen
         const { data: matches } = await supabase
           .from('matches')
           .select('*')
           .eq('season', '2025')
           .eq('is_finished', true)
 
-        // 3. Berechne Statistiken für jedes Team
         const calculateTeamStats = (team: Team): TeamStats => {
           const teamMatches = matches?.filter(m => 
             m.home_team_id === team.id || m.away_team_id === team.id
@@ -126,7 +118,6 @@ export default function TeamsPage() {
           }
         }
 
-        // 4. Verarbeite Teams nach Liga
         const bl1 = teams
           .filter(t => t.league_shortcut === 'bl1')
           .map(calculateTeamStats)
@@ -138,7 +129,6 @@ export default function TeamsPage() {
         setBl1Teams(bl1)
         setBl2Teams(bl2)
 
-        // 5. Initialisiere Input- und Original-Werte
         const inputs: Record<number, string> = {}
         const originals: Record<number, number> = {}
         
@@ -159,7 +149,6 @@ export default function TeamsPage() {
     fetchTeamsData()
   }, [])
 
-  // Prüfe ob Änderungen vorhanden sind
   const hasChanges = Object.keys(inputValues).some(teamIdStr => {
     const teamId = parseInt(teamIdStr)
     const currentValue = parseInt(inputValues[teamId] || '0')
@@ -168,7 +157,6 @@ export default function TeamsPage() {
   })
 
   const handleInputChange = useCallback((teamId: number, value: string) => {
-    // Aktualisiere nur den Input-Wert
     setInputValues(prev => ({
       ...prev,
       [teamId]: value
@@ -179,7 +167,6 @@ export default function TeamsPage() {
     setSaving(true)
 
     try {
-      // Sammle alle Änderungen
       const updates: Array<{ id: number; value: number }> = []
       
       Object.keys(inputValues).forEach(teamIdStr => {
@@ -197,7 +184,6 @@ export default function TeamsPage() {
         return
       }
 
-      // Speichere alle Änderungen
       for (const update of updates) {
         const { error } = await supabase
           .from('teams')
@@ -207,14 +193,12 @@ export default function TeamsPage() {
         if (error) throw error
       }
 
-      // Aktualisiere Original-Werte
       const newOriginals = { ...originalValues }
       updates.forEach(u => {
         newOriginals[u.id] = u.value
       })
       setOriginalValues(newOriginals)
 
-      // Aktualisiere Team States
       const updateTeamValue = (team: Team) => ({
         ...team,
         games_to_wait_after_draw: parseInt(inputValues[team.id] || '0')
@@ -243,7 +227,6 @@ export default function TeamsPage() {
     setCalculating(true)
 
     try {
-      // 1. Finde den letzten beendeten Spieltag
       const { data: lastFinishedMatch } = await supabase
         .from('matches')
         .select('matchday')
@@ -259,7 +242,6 @@ export default function TeamsPage() {
 
       const lastMatchday = lastFinishedMatch[0].matchday
 
-      // 2. Rufe die Funktion für beide Ligen auf
       const { error: bl1Error } = await supabase.rpc('calculate_stakes_after_matchday', {
         p_matchday: lastMatchday,
         p_league_shortcut: 'bl1',
@@ -285,17 +267,43 @@ export default function TeamsPage() {
     }
   }
 
+  const handleRecalculateStakes = async () => {
+    setRecalculating(true)
+
+    try {
+      const { data: bl1Data, error: bl1Error } = await supabase.rpc('recalculate_all_stakes_from_last_draw', {
+        p_league_shortcut: 'bl1',
+        p_season: '2025'
+      })
+
+      if (bl1Error) throw bl1Error
+
+      const { data: bl2Data, error: bl2Error } = await supabase.rpc('recalculate_all_stakes_from_last_draw', {
+        p_league_shortcut: 'bl2',
+        p_season: '2025'
+      })
+
+      if (bl2Error) throw bl2Error
+
+      const totalUpdates = (bl1Data?.length || 0) + (bl2Data?.length || 0)
+      alert(`${totalUpdates} Einsätze rückwirkend neu berechnet!`)
+    } catch (error) {
+      console.error('Fehler beim rückwirkenden Berechnen:', error)
+      alert('Fehler beim rückwirkenden Berechnen der Einsätze')
+    } finally {
+      setRecalculating(false)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
       <Header />
       
       <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
-        {/* Header mit Buttons */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+        <div className="flex flex-col gap-4 mb-6">
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold text-slate-800">Teams Übersicht</h1>
             
-            {/* Ligen-Toggle */}
             <div className="flex gap-2">
               <button
                 onClick={() => setShowBl1(!showBl1)}
@@ -321,13 +329,11 @@ export default function TeamsPage() {
             </div>
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex gap-3">
-            {/* Save Button */}
+          <div className="flex gap-1.5 flex-wrap">
             <button
               onClick={handleSaveAll}
               disabled={saving || !hasChanges}
-              className={`px-4 py-2 rounded-lg transition-all duration-200 font-semibold shadow-lg flex items-center gap-2 text-sm ${
+              className={`px-2 py-1.5 sm:px-3 sm:py-2 rounded-lg transition-all duration-200 font-semibold shadow-lg flex items-center gap-1 sm:gap-2 text-[10px] sm:text-xs ${
                 hasChanges 
                   ? 'bg-green-600 hover:bg-green-700 text-white' 
                   : 'bg-slate-300 text-slate-500 cursor-not-allowed'
@@ -335,24 +341,23 @@ export default function TeamsPage() {
             >
               {saving ? (
                 <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                  Speichert...
+                  <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
+                  <span className="whitespace-nowrap">Speichert...</span>
                 </>
               ) : (
                 <>
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
                     <path d="M7.707 10.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V6h5a2 2 0 012 2v7a2 2 0 01-2 2H4a2 2 0 01-2-2V8a2 2 0 012-2h5v5.586l-1.293-1.293zM9 4a1 1 0 012 0v2H9V4z" />
                   </svg>
-                  Speichern
+                  <span className="whitespace-nowrap">Speichern</span>
                 </>
               )}
             </button>
 
-            {/* Calculate Stakes Button - IMMER AKTIV */}
             <button
               onClick={handleCalculateStakes}
               disabled={calculating}
-              className={`px-4 py-2 rounded-lg transition-all duration-200 font-semibold shadow-lg flex items-center gap-2 text-sm ${
+              className={`px-2 py-1.5 sm:px-3 sm:py-2 rounded-lg transition-all duration-200 font-semibold shadow-lg flex items-center gap-1 sm:gap-2 text-[10px] sm:text-xs ${
                 calculating
                   ? 'bg-blue-400 cursor-wait text-white'
                   : 'bg-blue-600 hover:bg-blue-700 text-white'
@@ -360,15 +365,39 @@ export default function TeamsPage() {
             >
               {calculating ? (
                 <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                  Berechnet...
+                  <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
+                  <span className="whitespace-nowrap">Berechnet...</span>
                 </>
               ) : (
                 <>
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
                     <path fillRule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V7.414A2 2 0 0015.414 6L12 2.586A2 2 0 0010.586 2H6zm5 6a1 1 0 10-2 0v3.586l-1.293-1.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V8z" clipRule="evenodd" />
                   </svg>
-                  Einsätze berechnen
+                  <span className="whitespace-nowrap">Berechnen</span>
+                </>
+              )}
+            </button>
+
+            <button
+              onClick={handleRecalculateStakes}
+              disabled={recalculating}
+              className={`px-2 py-1.5 sm:px-3 sm:py-2 rounded-lg transition-all duration-200 font-semibold shadow-lg flex items-center gap-1 sm:gap-2 text-[10px] sm:text-xs ${
+                recalculating
+                  ? 'bg-purple-400 cursor-wait text-white'
+                  : 'bg-purple-600 hover:bg-purple-700 text-white'
+              }`}
+            >
+              {recalculating ? (
+                <>
+                  <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
+                  <span className="whitespace-nowrap">Berechnet...</span>
+                </>
+              ) : (
+                <>
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+                  </svg>
+                  <span className="whitespace-nowrap">Rückwirkend</span>
                 </>
               )}
             </button>
@@ -382,7 +411,6 @@ export default function TeamsPage() {
           </div>
         ) : (
           <>
-            {/* 1. Bundesliga */}
             {showBl1 && (
               <div className="mb-8">
                 <div className="flex items-center gap-3 mb-4">
@@ -423,7 +451,6 @@ export default function TeamsPage() {
               </div>
             )}
 
-            {/* 2. Bundesliga */}
             {showBl2 && (
               <div>
                 <div className="flex items-center gap-3 mb-4">
@@ -464,7 +491,6 @@ export default function TeamsPage() {
               </div>
             )}
 
-            {/* Keine Liga ausgewählt */}
             {!showBl1 && !showBl2 && (
               <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-12 text-center">
                 <p className="text-slate-500">Bitte mindestens eine Liga auswählen</p>
