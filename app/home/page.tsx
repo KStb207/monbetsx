@@ -52,7 +52,7 @@ export default function HomePage() {
         let bl1TotalPayout = 0
         let bl2TotalPayout = 0
         
-        bets?.forEach(bet => {
+        bets?.forEach((bet: any) => {
           const league = bet.matches.league_shortcut
           const stake = bet.total_stake || 0
           const payout = bet.payout || 0
@@ -78,7 +78,7 @@ export default function HomePage() {
           totalProfit: (bl1TotalPayout + bl2TotalPayout) - (bl1TotalStake + bl2TotalStake)
         })
         
-        // 3. ✅ KORRIGIERT: Finde nächsten Spieltag basierend auf Datum
+        // 3. Finde nächsten Spieltag basierend auf Datum
         const now = new Date()
         
         const { data: upcomingMatches } = await supabase
@@ -104,7 +104,7 @@ export default function HomePage() {
         let bl1Current = 0
         let bl2Current = 0
         
-        stakes?.forEach(s => {
+        stakes?.forEach((s: any) => {
           const stake = s.stake || 0
           if (s.teams.league_shortcut === 'bl1') {
             bl1Current += stake
