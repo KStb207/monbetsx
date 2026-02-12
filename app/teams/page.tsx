@@ -20,7 +20,7 @@ interface TeamStats {
   drawPercentage: number
 }
 
-// ✅ NEU: Memoized TeamRow Component
+// Memoized TeamRow Component
 const TeamRow = memo(({ 
   teamStats, 
   inputValue, 
@@ -76,6 +76,7 @@ export default function TeamsPage() {
   const [bl2Teams, setBl2Teams] = useState<TeamStats[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [calculating, setCalculating] = useState(false)
   
   // Toggler States
   const [showBl1, setShowBl1] = useState(true)
@@ -238,64 +239,138 @@ export default function TeamsPage() {
     }
   }
 
+  const handleCalculateStakes = async () => {
+    setCalculating(true)
+
+    try {
+      // 1. Finde den letzten beendeten Spieltag
+      const { data: lastFinishedMatch } = await supabase
+        .from('matches')
+        .select('matchday')
+        .eq('season', '2025')
+        .eq('is_finished', true)
+        .order('matchday', { ascending: false })
+        .limit(1)
+
+      if (!lastFinishedMatch || lastFinishedMatch.length === 0) {
+        alert('Keine beendeten Spiele gefunden')
+        return
+      }
+
+      const lastMatchday = lastFinishedMatch[0].matchday
+
+      // 2. Rufe die Funktion für beide Ligen auf
+      const { error: bl1Error } = await supabase.rpc('calculate_stakes_after_matchday', {
+        p_matchday: lastMatchday,
+        p_league_shortcut: 'bl1',
+        p_season: '2025'
+      })
+
+      if (bl1Error) throw bl1Error
+
+      const { error: bl2Error } = await supabase.rpc('calculate_stakes_after_matchday', {
+        p_matchday: lastMatchday,
+        p_league_shortcut: 'bl2',
+        p_season: '2025'
+      })
+
+      if (bl2Error) throw bl2Error
+
+      alert(`Einsätze für Spieltag ${lastMatchday + 1} erfolgreich berechnet!`)
+    } catch (error) {
+      console.error('Fehler beim Berechnen:', error)
+      alert('Fehler beim Berechnen der Einsätze')
+    } finally {
+      setCalculating(false)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
       <Header />
       
-      {/* Fixed Save Button */}
-      <div className="fixed top-20 right-4 z-50">
-        <button
-          onClick={handleSaveAll}
-          disabled={saving || !hasChanges}
-          className={`px-6 py-3 rounded-lg transition-all duration-200 font-semibold shadow-xl flex items-center gap-2 ${
-            hasChanges 
-              ? 'bg-green-600 hover:bg-green-700 text-white scale-100' 
-              : 'bg-slate-300 text-slate-500 cursor-not-allowed scale-95'
-          }`}
-        >
-          {saving ? (
-            <>
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-              Speichert...
-            </>
-          ) : (
-            <>
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path d="M7.707 10.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V6h5a2 2 0 012 2v7a2 2 0 01-2 2H4a2 2 0 01-2-2V8a2 2 0 012-2h5v5.586l-1.293-1.293zM9 4a1 1 0 012 0v2H9V4z" />
-              </svg>
-              Alle Änderungen speichern
-            </>
-          )}
-        </button>
-      </div>
-      
       <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
-        {/* Header */}
-        <div className="flex items-center gap-3 mb-6">
-          <h1 className="text-2xl font-bold text-slate-800">Teams Übersicht</h1>
-          
-          {/* Ligen-Toggle */}
-          <div className="flex gap-2">
+        {/* Header mit Buttons */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold text-slate-800">Teams Übersicht</h1>
+            
+            {/* Ligen-Toggle */}
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowBl1(!showBl1)}
+                className={`px-4 py-2 rounded-lg font-semibold text-sm transition ${
+                  showBl1
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'bg-white text-slate-600 border border-slate-300 hover:bg-slate-50'
+                }`}
+              >
+                1. BL
+              </button>
+
+              <button
+                onClick={() => setShowBl2(!showBl2)}
+                className={`px-4 py-2 rounded-lg font-semibold text-sm transition ${
+                  showBl2
+                    ? 'bg-slate-700 text-white shadow-sm'
+                    : 'bg-white text-slate-600 border border-slate-300 hover:bg-slate-50'
+                }`}
+              >
+                2. BL
+              </button>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex gap-3">
+            {/* Save Button */}
             <button
-              onClick={() => setShowBl1(!showBl1)}
-              className={`px-4 py-2 rounded-lg font-semibold text-sm transition ${
-                showBl1
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'bg-white text-slate-600 border border-slate-300 hover:bg-slate-50'
+              onClick={handleSaveAll}
+              disabled={saving || !hasChanges}
+              className={`px-4 py-2 rounded-lg transition-all duration-200 font-semibold shadow-lg flex items-center gap-2 text-sm ${
+                hasChanges 
+                  ? 'bg-green-600 hover:bg-green-700 text-white' 
+                  : 'bg-slate-300 text-slate-500 cursor-not-allowed'
               }`}
             >
-              1. BL
+              {saving ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  Speichert...
+                </>
+              ) : (
+                <>
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M7.707 10.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V6h5a2 2 0 012 2v7a2 2 0 01-2 2H4a2 2 0 01-2-2V8a2 2 0 012-2h5v5.586l-1.293-1.293zM9 4a1 1 0 012 0v2H9V4z" />
+                  </svg>
+                  Speichern
+                </>
+              )}
             </button>
 
+            {/* Calculate Stakes Button - IMMER AKTIV */}
             <button
-              onClick={() => setShowBl2(!showBl2)}
-              className={`px-4 py-2 rounded-lg font-semibold text-sm transition ${
-                showBl2
-                  ? 'bg-slate-700 text-white shadow-sm'
-                  : 'bg-white text-slate-600 border border-slate-300 hover:bg-slate-50'
+              onClick={handleCalculateStakes}
+              disabled={calculating}
+              className={`px-4 py-2 rounded-lg transition-all duration-200 font-semibold shadow-lg flex items-center gap-2 text-sm ${
+                calculating
+                  ? 'bg-blue-400 cursor-wait text-white'
+                  : 'bg-blue-600 hover:bg-blue-700 text-white'
               }`}
             >
-              2. BL
+              {calculating ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  Berechnet...
+                </>
+              ) : (
+                <>
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V7.414A2 2 0 0015.414 6L12 2.586A2 2 0 0010.586 2H6zm5 6a1 1 0 10-2 0v3.586l-1.293-1.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V8z" clipRule="evenodd" />
+                  </svg>
+                  Einsätze berechnen
+                </>
+              )}
             </button>
           </div>
         </div>
