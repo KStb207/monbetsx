@@ -84,70 +84,75 @@ export default function TeamsPage() {
   const [originalValues, setOriginalValues] = useState<Record<number, number>>({})
 
   useEffect(() => {
-    async function fetchTeamsData() {
-      setLoading(true)
-      
-      try {
-        const { data: teams } = await supabase
-          .from('teams')
-          .select('*')
-          .order('name', { ascending: true })
+  async function fetchTeamsData() {
+    setLoading(true)
+    
+    try {
+      // 1. Hole alle Teams - sortiert nach short_name
+      const { data: teams } = await supabase
+        .from('teams')
+        .select('*')
+        .order('short_name', { ascending: true })  // ✅ Geändert von 'name' zu 'short_name'
 
-        if (!teams) return
+      if (!teams) return
 
-        const { data: matches } = await supabase
-          .from('matches')
-          .select('*')
-          .eq('season', '2025')
-          .eq('is_finished', true)
+      // 2. Hole alle Matches mit Ergebnissen
+      const { data: matches } = await supabase
+        .from('matches')
+        .select('*')
+        .eq('season', '2025')
+        .eq('is_finished', true)
 
-        const calculateTeamStats = (team: Team): TeamStats => {
-          const teamMatches = matches?.filter(m => 
-            m.home_team_id === team.id || m.away_team_id === team.id
-          ) || []
+      // 3. Berechne Statistiken für jedes Team
+      const calculateTeamStats = (team: Team): TeamStats => {
+        const teamMatches = matches?.filter(m => 
+          m.home_team_id === team.id || m.away_team_id === team.id
+        ) || []
 
-          const drawCount = teamMatches.filter(m => m.result === 'x').length
-          const totalMatches = teamMatches.length
-          const drawPercentage = totalMatches > 0 ? (drawCount / totalMatches) * 100 : 0
+        const drawCount = teamMatches.filter(m => m.result === 'x').length
+        const totalMatches = teamMatches.length
+        const drawPercentage = totalMatches > 0 ? (drawCount / totalMatches) * 100 : 0
 
-          return {
-            team,
-            totalMatches,
-            drawCount,
-            drawPercentage
-          }
+        return {
+          team,
+          totalMatches,
+          drawCount,
+          drawPercentage
         }
-
-        const bl1 = teams
-          .filter(t => t.league_shortcut === 'bl1')
-          .map(calculateTeamStats)
-        
-        const bl2 = teams
-          .filter(t => t.league_shortcut === 'bl2')
-          .map(calculateTeamStats)
-
-        setBl1Teams(bl1)
-        setBl2Teams(bl2)
-
-        const inputs: Record<number, string> = {}
-        const originals: Record<number, number> = {}
-        
-        teams.forEach(t => {
-          inputs[t.id] = t.games_to_wait_after_draw.toString()
-          originals[t.id] = t.games_to_wait_after_draw
-        })
-        
-        setInputValues(inputs)
-        setOriginalValues(originals)
-      } catch (error) {
-        console.error('Fehler beim Laden:', error)
-      } finally {
-        setLoading(false)
       }
-    }
 
-    fetchTeamsData()
-  }, [])
+      // 4. Verarbeite Teams nach Liga (bereits sortiert durch Query)
+      const bl1 = teams
+        .filter(t => t.league_shortcut === 'bl1')
+        .map(calculateTeamStats)
+      
+      const bl2 = teams
+        .filter(t => t.league_shortcut === 'bl2')
+        .map(calculateTeamStats)
+
+      setBl1Teams(bl1)
+      setBl2Teams(bl2)
+
+      // 5. Initialisiere Input- und Original-Werte
+      const inputs: Record<number, string> = {}
+      const originals: Record<number, number> = {}
+      
+      teams.forEach(t => {
+        inputs[t.id] = t.games_to_wait_after_draw.toString()
+        originals[t.id] = t.games_to_wait_after_draw
+      })
+      
+      setInputValues(inputs)
+      setOriginalValues(originals)
+    } catch (error) {
+      console.error('Fehler beim Laden:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  fetchTeamsData()
+}, [])
 
   const hasChanges = Object.keys(inputValues).some(teamIdStr => {
     const teamId = parseInt(teamIdStr)
