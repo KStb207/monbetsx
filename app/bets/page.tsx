@@ -39,7 +39,7 @@ interface AlternativeStake {
 }
 
 export default function BetsPage() {
-  const [selectedMatchday, setSelectedMatchday] = useState<number>(1)
+  const [selectedMatchday, setSelectedMatchday] = useState<number | null>(null) // ✅ Geändert: null statt 1
   const [bl1Matches, setBl1Matches] = useState<Match[]>([])
   const [bl2Matches, setBl2Matches] = useState<Match[]>([])
   const [availableMatchdays, setAvailableMatchdays] = useState<number[]>([])
@@ -154,7 +154,7 @@ export default function BetsPage() {
       setLoading(false)
     }
     
-    if (selectedMatchday) {
+    if (selectedMatchday !== null) { // ✅ Geändert: !== null
       fetchMatchesWithStakes()
     }
   }, [selectedMatchday])
@@ -300,14 +300,14 @@ export default function BetsPage() {
 
   // Navigation zwischen Spieltagen
   const goToPreviousMatchday = () => {
-    const currentIndex = availableMatchdays.indexOf(selectedMatchday)
+    const currentIndex = availableMatchdays.indexOf(selectedMatchday!)
     if (currentIndex > 0) {
       setSelectedMatchday(availableMatchdays[currentIndex - 1])
     }
   }
 
   const goToNextMatchday = () => {
-    const currentIndex = availableMatchdays.indexOf(selectedMatchday)
+    const currentIndex = availableMatchdays.indexOf(selectedMatchday!)
     if (currentIndex < availableMatchdays.length - 1) {
       setSelectedMatchday(availableMatchdays[currentIndex + 1])
     }
@@ -381,7 +381,7 @@ export default function BetsPage() {
           return newMap
         })
 
-        alert(`Abbruch für ${teamName} erfolgreich! Einsatz wird beim nächsten Spieltag auf 0,50 € zurückgesetzt.`)
+        alert(`Abbruch für ${teamName} erfolgreich! Einsatz wird beim nächsten Spieltag auf 1€ zurückgesetzt.`)
         
         // Reload data
         window.location.reload()
@@ -407,145 +407,95 @@ export default function BetsPage() {
               ) : hasMatchStarted ? (
                 <span className="px-2 py-1 bg-red-100 text-red-700 rounded-full font-semibold">Läuft</span>
               ) : (
-                <span className="text-[10px] sm:text-xs">{formatDate(match.match_date)}</span>
+                <span>{formatDate(match.match_date)}</span>
               )}
             </div>
-            {match.is_finished && match.result && (
-              <div className="text-xs">
-                {match.result === 'x' ? (
-                  <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full font-semibold text-[10px] sm:text-xs">
-                    Unentschieden
-                  </span>
-                ) : (
-                  <span className="px-2 py-1 bg-slate-100 text-slate-600 rounded-full text-[10px] sm:text-xs">
-                    {match.result === '1' ? 'Heimsieg' : 'Auswärtssieg'}
-                  </span>
-                )}
-              </div>
-            )}
+            <div className="text-xs font-semibold text-slate-600">
+              {match.league_shortcut.toUpperCase()}
+            </div>
           </div>
 
-          {/* Teams & Einsätze - Mobile optimiert */}
-          <div className="flex items-start gap-2 sm:gap-4 mb-2 sm:mb-3">
-            {/* Teams mit Einsätzen */}
-            <div className="flex-1 space-y-1.5 sm:space-y-2">
-              {/* Heimteam */}
-              <div className="flex items-center">
-                <span className={`font-semibold text-xs sm:text-sm w-24 sm:w-32 ${
-                  homeTeamOver250 ? 'text-orange-600' : 'text-slate-800'
-                }`}>
-                  {match.home_team.short_name}
-                </span>
-                <span className={`text-xs sm:text-sm font-bold ml-1 sm:ml-2 ${
-                  homeTeamOver250 ? 'text-orange-600' : 'text-blue-600'
-                }`}>
-                  {formatCurrency(match.home_stake)}
-                </span>
-              </div>
-
-              {/* Auswärtsteam */}
-              <div className="flex items-center">
-                <span className={`font-semibold text-xs sm:text-sm w-24 sm:w-32 ${
-                  awayTeamOver250 ? 'text-orange-600' : 'text-slate-800'
-                }`}>
-                  {match.away_team.short_name}
-                </span>
-                <span className={`text-xs sm:text-sm font-bold ml-1 sm:ml-2 ${
-                  awayTeamOver250 ? 'text-orange-600' : 'text-blue-600'
-                }`}>
-                  {formatCurrency(match.away_stake)}
-                </span>
-              </div>
+          {/* Teams */}
+          <div className="space-y-1.5 sm:space-y-2 mb-2 sm:mb-3">
+            {/* Heimteam */}
+            <div className="flex items-center justify-between">
+              <span className={`text-sm sm:text-base font-semibold ${homeTeamOver250 ? 'text-orange-600' : 'text-slate-800'}`}>
+                {match.home_team.short_name}
+              </span>
+              <span className={`text-xs sm:text-sm font-bold ${homeTeamOver250 ? 'text-orange-600' : 'text-slate-600'}`}>
+                {formatCurrency(match.home_stake)}
+              </span>
             </div>
 
-            {/* Ergebnis - Links vom Gesamteinsatz */}
-            {match.is_finished && (
-              <div className="flex flex-col items-center justify-center gap-1 min-w-[30px] sm:min-w-[40px]">
-                <span className="text-sm sm:text-base font-bold text-slate-900">
-                  {match.home_goals}
-                </span>
-                <span className="text-sm sm:text-base font-bold text-slate-900">
-                  {match.away_goals}
-                </span>
-              </div>
-            )}
-
-            {/* Gesamteinsatz - Rechts */}
-            <div className="flex flex-col items-end justify-center min-w-[60px] sm:min-w-[80px]">
-              <span className="text-[10px] sm:text-xs text-slate-500 mb-0.5 sm:mb-1">Gesamt</span>
-              <span className={`text-base sm:text-lg font-bold ${
-                anyTeamOver250 ? 'text-orange-600' : 'text-slate-800'
-              }`}>
-                {formatCurrency(match.total_stake)}
+            {/* Auswärtsteam */}
+            <div className="flex items-center justify-between">
+              <span className={`text-sm sm:text-base font-semibold ${awayTeamOver250 ? 'text-orange-600' : 'text-slate-800'}`}>
+                {match.away_team.short_name}
+              </span>
+              <span className={`text-xs sm:text-sm font-bold ${awayTeamOver250 ? 'text-orange-600' : 'text-slate-600'}`}>
+                {formatCurrency(match.away_stake)}
               </span>
             </div>
           </div>
 
-          {/* Quote Input - Mobile optimiert */}
-          <div className="flex items-center gap-1.5 sm:gap-2 mb-2 sm:mb-3 pt-2 border-t border-slate-100">
-            <label className="text-[10px] sm:text-xs font-medium text-slate-600 min-w-[35px] sm:min-w-[40px]">
-              Quote
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              min="1.00"
-              max="99.99"
-              value={oddsInput}
-              onChange={(e) => setOddsInput(e.target.value)}
-              disabled={!canBet}
-              className={`flex-1 px-2 py-1 sm:py-1.5 text-xs sm:text-sm text-slate-900 font-medium border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none ${
-                !canBet
-                  ? 'bg-slate-100 border-slate-200 cursor-not-allowed' 
-                  : 'bg-white border-slate-300'
-              }`}
-              placeholder="3.40"
-            />
-            <button
-              onClick={() => {
-                const odds = parseFloat(oddsInput)
-                if (isNaN(odds) || odds < 1 || odds > 99.99) {
-                  alert('Bitte gültige Quote eingeben (1.00 - 99.99)')
-                  return
-                }
-                
-                // Speichere Scroll-Position RELATIV zur Card
-                const cardElement = cardRef.current
-                if (cardElement) {
-                  const cardTop = cardElement.getBoundingClientRect().top
-                  const scrollOffset = window.scrollY + cardTop
-                  
-                  handleSaveOdds(match.id, odds, match)
-                  
-                  setTimeout(() => {
-                    window.scrollTo({
-                      top: scrollOffset - 100,
-                      behavior: 'smooth'
-                    })
-                  }, 100)
-                } else {
-                  handleSaveOdds(match.id, odds, match)
-                }
-              }}
-              disabled={savingMatchId === match.id || !canBet}
-              className={`px-2 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs rounded-lg transition font-medium whitespace-nowrap ${
-                !canBet
-                  ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
-                  : 'bg-blue-600 hover:bg-blue-700 text-white'
-              } disabled:bg-slate-400`}
-            >
-              {savingMatchId === match.id ? '...' : hasMatchStarted ? 'Gestartet' : isAlreadyBet ? 'Getippt' : 'Speichern'}
-            </button>
+          {/* Gesamteinsatz */}
+          <div className="flex items-center justify-between pt-2 border-t border-slate-100 mb-2 sm:mb-3">
+            <span className="text-xs sm:text-sm text-slate-600">Gesamteinsatz:</span>
+            <span className={`text-sm sm:text-base font-bold ${anyTeamOver250 ? 'text-orange-600' : 'text-blue-700'}`}>
+              {formatCurrency(match.total_stake)}
+            </span>
           </div>
 
-          {/* Info wenn Spiel bereits gestartet */}
-          {hasMatchStarted && !match.is_finished && (
-            <div className="text-[10px] sm:text-xs text-red-600 bg-red-50 px-2 py-1 rounded mb-2">
-              ⚠️ Spiel bereits gestartet - keine Tipps mehr möglich
+          {/* Quote Input & Save Button */}
+          {canBet && (
+            <div className="flex gap-1.5 sm:gap-2">
+              <input
+                type="number"
+                step="0.01"
+                min="1.01"
+                max="100"
+                value={oddsInput}
+                onChange={(e) => setOddsInput(e.target.value)}
+                className="flex-1 px-2 sm:px-3 py-1.5 sm:py-2 border border-slate-300 rounded-lg text-xs sm:text-sm font-semibold text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                placeholder="Quote"
+              />
+              <button
+                onClick={() => {
+                  const odds = parseFloat(oddsInput)
+                  if (odds >= 1.01 && odds <= 100) {
+                    handleSaveOdds(match.id, odds, match)
+                  } else {
+                    alert('Bitte eine Quote zwischen 1.01 und 100 eingeben')
+                  }
+                }}
+                disabled={savingMatchId === match.id}
+                className="px-3 sm:px-4 py-1.5 sm:py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white rounded-lg transition font-semibold text-xs sm:text-sm whitespace-nowrap"
+              >
+                {savingMatchId === match.id ? 'Speichert...' : 'Speichern'}
+              </button>
             </div>
           )}
 
-          {/* Optionen bei zu hohem Einsatz */}
+          {/* Bereits getippt */}
+          {isAlreadyBet && !hasMatchStarted && (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-2 sm:p-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs sm:text-sm text-green-800 font-semibold">✓ Getippt</span>
+                <span className="text-sm sm:text-base font-bold text-green-700">{match.odds?.toFixed(2)}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Spiel gestartet - keine Tipps mehr möglich */}
+          {hasMatchStarted && !match.is_finished && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-2 sm:p-3">
+              <div className="text-xs sm:text-sm text-red-800 font-semibold text-center">
+                Spiel bereits gestartet - keine Tipps mehr möglich
+              </div>
+            </div>
+          )}
+
+          {/* Alternative Stake Anzeige */}
           {anyTeamOver250 && canBet && (
             <div className="mt-2 sm:mt-3 pt-2 sm:pt-3 border-t border-orange-200 bg-orange-50 -mx-3 sm:-mx-4 -mb-3 sm:-mb-4 px-3 sm:px-4 py-2 sm:py-3 rounded-b-lg">
               <div className="text-[10px] sm:text-xs font-semibold text-orange-800 mb-1 sm:mb-2">
@@ -632,14 +582,14 @@ export default function BetsPage() {
               if (teamToAbort === 'home') {
                 return {
                   ...m,
-                  home_stake: 0.5,
-                  total_stake: 0.5 + m.away_stake
+                  home_stake: 1,
+                  total_stake: 1 + m.away_stake
                 }
               } else {
                 return {
                   ...m,
-                  away_stake: 0.5,
-                  total_stake: m.home_stake + 0.5
+                  away_stake: 1,
+                  total_stake: m.home_stake + 1
                 }
               }
             }
@@ -659,7 +609,7 @@ export default function BetsPage() {
         setShowModal(false)
         setModalMatchId(null)
         
-        alert('Abbruch erfolgreich! Einsatz wird beim nächsten Spieltag auf 0,50 € zurückgesetzt.')
+        alert('Abbruch erfolgreich! Einsatz wird beim nächsten Spieltag auf 1€ zurückgesetzt.')
       } catch (error) {
         console.error('Fehler beim Abbruch:', error)
         alert('Fehler beim Abbruch des Teams')
@@ -758,9 +708,24 @@ export default function BetsPage() {
   const bl2Stats = calculateStats(bl2Matches)
   const overallStats = calculateStats([...bl1Matches, ...bl2Matches])
 
-  const currentIndex = availableMatchdays.indexOf(selectedMatchday)
+  const currentIndex = selectedMatchday !== null ? availableMatchdays.indexOf(selectedMatchday) : -1
   const isFirstMatchday = currentIndex === 0
   const isLastMatchday = currentIndex === availableMatchdays.length - 1
+
+  // ✅ NEU: Zeige Loading bis Spieltag ermittelt wurde
+  if (selectedMatchday === null) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+        <Header />
+        <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
+          <div className="text-center py-12">
+            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            <p className="mt-2 text-slate-600">Lade aktuellen Spieltag...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
