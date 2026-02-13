@@ -19,11 +19,13 @@ interface Match {
     id: number
     name: string
     short_name: string
+    odds_api_id?: string // NEU: API Team ID
   }
   away_team: {
     id: number
     name: string
     short_name: string
+    odds_api_id?: string // NEU: API Team ID
   }
   home_stake: number
   away_stake: number
@@ -38,8 +40,15 @@ interface AlternativeStake {
   quote: number
 }
 
+// NEU: Interface für API Quoten
+interface ApiOdds {
+  home: number | null
+  draw: number | null
+  away: number | null
+}
+
 export default function BetsPage() {
-  const [selectedMatchday, setSelectedMatchday] = useState<number | null>(null) // ✅ Geändert: null statt 1
+  const [selectedMatchday, setSelectedMatchday] = useState<number | null>(null)
   const [bl1Matches, setBl1Matches] = useState<Match[]>([])
   const [bl2Matches, setBl2Matches] = useState<Match[]>([])
   const [availableMatchdays, setAvailableMatchdays] = useState<number[]>([])
@@ -55,6 +64,132 @@ export default function BetsPage() {
   const [showModal, setShowModal] = useState(false)
   const [modalMatchId, setModalMatchId] = useState<number | null>(null)
 
+  // NEU: API Quoten States
+  const [apiOdds, setApiOdds] = useState<Map<number, ApiOdds>>(new Map())
+  const [loadingApiOdds, setLoadingApiOdds] = useState(false)
+
+// NEU: Funktion zum Laden der API-Quoten (nur Unentschieden von Tipico)
+const fetchOddsFromAPI = async (matches: Match[], leagueKey: string) => {
+  setLoadingApiOdds(true)
+  try {
+    const apiKey = process.env.NEXT_PUBLIC_ODDS_API_KEY
+    const response = await fetch(
+      `https://api.the-odds-api.com/v4/sports/${leagueKey}/odds/?apiKey=${apiKey}&regions=eu&markets=h2h&oddsFormat=decimal&bookmakers=tipico`,
+      { next: { revalidate: 3600 } }
+    )
+
+    if (!response.ok) {
+      console.error('API Error:', response.status)
+      return
+    }
+
+    const data = await response.json()
+    
+    // ═══════════════════════════════════════════════════════════
+    // DEBUG: Zeige ALLE Spiele die die API zurückgibt
+    // ═══════════════════════════════════════════════════════════
+    console.log('🎯 ALLE SPIELE IN DER API-RESPONSE:')
+    console.log('═'.repeat(80))
+    data.forEach((game: any, i: number) => {
+      const date = new Date(game.commence_time).toLocaleDateString('de-DE', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+      const hasTipico = game.bookmakers.find((b: any) => b.key === 'tipico')
+      console.log(`${i+1}. "${game.home_team}" vs "${game.away_team}"`)
+      console.log(`   Datum: ${date}`)
+      console.log(`   Tipico: ${hasTipico ? '✅' : '❌'}`)
+    })
+    console.log('═'.repeat(80))
+    console.log(`\n📊 Gesamt: ${data.length} Spiele gefunden\n`)
+    
+    const newOddsMap = new Map<number, ApiOdds>()
+
+    // Matche die API-Daten mit deinen Spielen
+    matches.forEach(match => {
+      console.log('─'.repeat(80))
+      console.log(`🔍 Suche Match für: ${match.home_team.short_name} vs ${match.away_team.short_name}`)
+      console.log(`   DB Home odds_api_id: "${match.home_team.odds_api_id}"`)
+      console.log(`   DB Away odds_api_id: "${match.away_team.odds_api_id}"`)
+      
+      const apiMatch = data.find((game: any) => {
+  // Test nur für das erste Spiel
+  if (match.home_team.short_name === 'Düsseldorf') {
+    console.log('🔬 BYTE-VERGLEICH für Düsseldorf:')
+    console.log('─'.repeat(60))
+    console.log('Home Team Vergleich:')
+    console.log(`  DB: "${match.home_team.odds_api_id}"`)
+    console.log(`  API: "${game.home_team}"`)
+    console.log(`  Typ DB: ${typeof match.home_team.odds_api_id}`)
+    console.log(`  Typ API: ${typeof game.home_team}`)
+    console.log(`  Länge DB: ${match.home_team.odds_api_id?.length}`)
+    console.log(`  Länge API: ${game.home_team.length}`)
+    console.log(`  Bytes DB: [${Array.from(match.home_team.odds_api_id || '').map(c => c.charCodeAt(0)).join(',')}]`)
+    console.log(`  Bytes API: [${Array.from(game.home_team).map(c => c.charCodeAt(0)).join(',')}]`)
+    console.log(`  === Vergleich: ${match.home_team.odds_api_id === game.home_team}`)
+    console.log(`  == Vergleich: ${match.home_team.odds_api_id == game.home_team}`)
+    console.log(`  Trimmed ===: ${match.home_team.odds_api_id?.trim() === game.home_team.trim()}`)
+    console.log('─'.repeat(60))
+  }
+  
+  // Originales Matching
+  const homeMatch = (match.home_team.odds_api_id && game.home_team.trim() === match.home_team.odds_api_id.trim()) ||
+                 game.home_team.trim() === match.home_team.name?.trim() || 
+                 game.home_team.trim() === match.home_team.short_name?.trim()
+
+const awayMatch = (match.away_team.odds_api_id && game.away_team.trim() === match.away_team.odds_api_id.trim()) ||
+                 game.away_team.trim() === match.away_team.name?.trim() || 
+                 game.away_team.trim() === match.away_team.short_name?.trim()
+  
+  return homeMatch && awayMatch
+})
+
+      if (apiMatch && apiMatch.bookmakers && apiMatch.bookmakers.length > 0) {
+        console.log(`✅ API Match gefunden: "${apiMatch.home_team}" vs "${apiMatch.away_team}"`)
+        
+        const tipicoBookmaker = apiMatch.bookmakers.find((b: any) => b.key === 'tipico')
+        
+        if (tipicoBookmaker) {
+          const h2hMarket = tipicoBookmaker.markets.find((m: any) => m.key === 'h2h')
+          
+          if (h2hMarket && h2hMarket.outcomes) {
+            const drawOdds = h2hMarket.outcomes.find((o: any) => o.name === 'Draw')
+
+            newOddsMap.set(match.id, {
+              home: null,
+              draw: drawOdds?.price || null,
+              away: null
+            })
+            
+            console.log(`   ✅ Tipico X-Quote: ${drawOdds?.price}`)
+          }
+        } else {
+          console.log(`   ⚠️ Tipico nicht verfügbar für dieses Spiel`)
+        }
+      } else {
+        console.log(`   ❌ Kein Match in API gefunden`)
+        console.log(`   💡 Mögliche Gründe:`)
+        console.log(`      - Spiel ist zeitlich zu weit weg`)
+        console.log(`      - odds_api_id stimmt nicht mit API-Namen überein`)
+        console.log(`      - Spiel ist bereits vorbei`)
+      }
+    })
+    
+    console.log('═'.repeat(80))
+    console.log(`\n📊 ERGEBNIS: ${newOddsMap.size} von ${matches.length} Spielen gematched\n`)
+    console.log('═'.repeat(80))
+
+    setApiOdds(prev => new Map([...prev, ...newOddsMap]))
+  } catch (error) {
+    console.error('❌ Fehler beim Laden der API-Quoten:', error)
+  } finally {
+    setLoadingApiOdds(false)
+  }
+}
+
   // Lade verfügbare Spieltage und setze nächsten Spieltag
   useEffect(() => {
     async function fetchMatchdays() {
@@ -67,19 +202,14 @@ export default function BetsPage() {
         const uniqueMatchdays = [...new Set(data.map(m => m.matchday))].sort((a, b) => a - b)
         setAvailableMatchdays(uniqueMatchdays)
         
-        // Finde das nächste anstehende Spiel (zeitlich am nächsten)
         const now = new Date()
-        
-        // Filtere nur zukünftige Spiele (inkl. heute)
         const upcomingMatches = data
           .filter(match => new Date(match.match_date) >= now && !match.is_finished)
           .sort((a, b) => new Date(a.match_date).getTime() - new Date(b.match_date).getTime())
         
         if (upcomingMatches.length > 0) {
-          // Wähle den Spieltag des zeitlich nächsten Spiels
           setSelectedMatchday(upcomingMatches[0].matchday)
         } else {
-          // Fallback: Letzter Spieltag wenn keine zukünftigen Spiele
           setSelectedMatchday(uniqueMatchdays[uniqueMatchdays.length - 1])
         }
       }
@@ -92,13 +222,12 @@ export default function BetsPage() {
     async function fetchMatchesWithStakes() {
       setLoading(true)
       
-      // 1. Hole alle Matches für beide Ligen
       const { data: bl1Data } = await supabase
         .from('matches')
         .select(`
           *,
-          home_team:teams!matches_home_team_id_fkey(id, name, short_name),
-          away_team:teams!matches_away_team_id_fkey(id, name, short_name)
+          home_team:teams!matches_home_team_id_fkey(id, name, short_name, odds_api_id),
+          away_team:teams!matches_away_team_id_fkey(id, name, short_name, odds_api_id)
         `)
         .eq('matchday', selectedMatchday)
         .eq('league_shortcut', 'bl1')
@@ -108,21 +237,19 @@ export default function BetsPage() {
         .from('matches')
         .select(`
           *,
-          home_team:teams!matches_home_team_id_fkey(id, name, short_name),
-          away_team:teams!matches_away_team_id_fkey(id, name, short_name)
+          home_team:teams!matches_home_team_id_fkey(id, name, short_name, odds_api_id),
+          away_team:teams!matches_away_team_id_fkey(id, name, short_name, odds_api_id)
         `)
         .eq('matchday', selectedMatchday)
         .eq('league_shortcut', 'bl2')
         .order('match_date', { ascending: true })
       
-      // 2. Hole alle Stakes für diesen Spieltag
       const { data: stakes } = await supabase
         .from('team_stakes')
         .select('team_id, stake')
         .eq('matchday', selectedMatchday)
         .eq('season', '2025')
       
-      // 3. Hole alle Bets (für Quoten)
       const allMatchIds = [
         ...(bl1Data?.map(m => m.id) || []),
         ...(bl2Data?.map(m => m.id) || [])
@@ -133,11 +260,9 @@ export default function BetsPage() {
         .select('match_id, odds')
         .in('match_id', allMatchIds)
       
-      // 4. Erstelle Maps für schnellen Zugriff
       const stakesMap = new Map(stakes?.map(s => [s.team_id, s.stake]) || [])
       const betsMap = new Map(bets?.map(b => [b.match_id, b.odds]) || [])
       
-      // 5. Füge Stakes und Odds zu Matches hinzu
       const enrichMatches = (matches: any[]): Match[] => {
         return matches.map(match => ({
           ...match,
@@ -148,13 +273,24 @@ export default function BetsPage() {
         }))
       }
       
-      if (bl1Data) setBl1Matches(enrichMatches(bl1Data))
-      if (bl2Data) setBl2Matches(enrichMatches(bl2Data))
+      if (bl1Data) {
+        const enrichedBl1 = enrichMatches(bl1Data)
+        setBl1Matches(enrichedBl1)
+        // NEU: Lade API-Quoten für 1. Bundesliga
+        fetchOddsFromAPI(enrichedBl1, 'soccer_germany_bundesliga')
+      }
+      
+      if (bl2Data) {
+        const enrichedBl2 = enrichMatches(bl2Data)
+        setBl2Matches(enrichedBl2)
+        // NEU: Lade API-Quoten für 2. Bundesliga
+        fetchOddsFromAPI(enrichedBl2, 'soccer_germany_bundesliga2')
+      }
       
       setLoading(false)
     }
     
-    if (selectedMatchday !== null) { // ✅ Geändert: !== null
+    if (selectedMatchday !== null) {
       fetchMatchesWithStakes()
     }
   }, [selectedMatchday])
@@ -167,7 +303,6 @@ export default function BetsPage() {
     setSavingMatchId(matchId)
     
     try {
-      // Upsert in bets Tabelle - MIT home_stake, away_stake, total_stake
       const { error } = await supabase
         .from('bets')
         .upsert({
@@ -184,14 +319,12 @@ export default function BetsPage() {
       
       if (error) throw error
       
-      // Aktualisiere lokalen State
       const updateMatches = (matches: Match[]) =>
         matches.map(m => m.id === matchId ? { ...m, odds } : m)
       
       setBl1Matches(updateMatches)
       setBl2Matches(updateMatches)
       
-      // Prüfe ob mindestens ein Team über 250€ ist
       if (match.home_stake > 250 || match.away_stake > 250) {
         const alternative = calculateAlternativeStake(match.total_stake, odds)
         setAlternativeStakes(prev => new Map(prev).set(matchId, {
@@ -201,7 +334,6 @@ export default function BetsPage() {
           quote: odds
         }))
       } else {
-        // Entferne Alternative falls vorhanden
         setAlternativeStakes(prev => {
           const newMap = new Map(prev)
           newMap.delete(matchId)
@@ -234,7 +366,6 @@ export default function BetsPage() {
     const alternative = alternativeStakes.get(matchId)
     if (!alternative) return
 
-    // Finde das Match
     const match = [...bl1Matches, ...bl2Matches].find(m => m.id === matchId)
     if (!match) return
 
@@ -248,7 +379,6 @@ export default function BetsPage() {
     }
 
     try {
-      // Update team_stakes in Supabase
       const { error } = await supabase
         .from('team_stakes')
         .update({ stake: newStake })
@@ -258,7 +388,6 @@ export default function BetsPage() {
 
       if (error) throw error
 
-      // Aktualisiere lokalen State
       const updateMatches = (matches: Match[]) =>
         matches.map(m => {
           if (m.id === matchId) {
@@ -282,7 +411,6 @@ export default function BetsPage() {
       setBl1Matches(updateMatches)
       setBl2Matches(updateMatches)
 
-      // Entferne Alternative
       setAlternativeStakes(prev => {
         const newMap = new Map(prev)
         newMap.delete(matchId)
@@ -298,7 +426,6 @@ export default function BetsPage() {
     }
   }
 
-  // Navigation zwischen Spieltagen
   const goToPreviousMatchday = () => {
     const currentIndex = availableMatchdays.indexOf(selectedMatchday!)
     if (currentIndex > 0) {
@@ -334,37 +461,43 @@ export default function BetsPage() {
   }
 
   const BetCard = ({ match }: { match: Match }) => {
-    const [oddsInput, setOddsInput] = useState<string>(match.odds?.toString() || '3.40')
+    // NEU: Hole API-Quoten für dieses Spiel
+    const matchApiOdds = apiOdds.get(match.id)
+    
+    // NEU: Verwende Tipico X-Quote als Default, falls verfügbar
+    const defaultOdds = matchApiOdds?.draw || match.odds || 3.40
+    const [oddsInput, setOddsInput] = useState<string>(defaultOdds.toString())
+    
     const alternative = alternativeStakes.get(match.id)
     const isAlreadyBet = match.odds !== null && match.odds !== undefined
     const cardRef = useRef<HTMLDivElement>(null)
 
-    // ✅ Prüfe ob Spiel bereits gestartet hat
     const matchDate = new Date(match.match_date)
     const now = new Date()
     const hasMatchStarted = matchDate <= now
     const canBet = !hasMatchStarted && !isAlreadyBet
 
-    // Prüfe welches Team über 250€ hat
     const homeTeamOver250 = match.home_stake > 250
     const awayTeamOver250 = match.away_stake > 250
     const anyTeamOver250 = homeTeamOver250 || awayTeamOver250
 
-    // Berechne Alternative on-the-fly wenn Team über 250€
     const currentOdds = parseFloat(oddsInput) || 3.40
     const calculatedAlternative = anyTeamOver250 ? calculateAlternativeStake(match.total_stake, currentOdds) : null
 
     useEffect(() => {
-      setOddsInput(match.odds?.toString() || '3.40')
-    }, [match.odds])
+      // Update input wenn API-Quoten geladen wurden oder Match odds sich ändern
+      if (matchApiOdds?.draw && !match.odds) {
+        setOddsInput(matchApiOdds.draw.toString())
+      } else if (match.odds) {
+        setOddsInput(match.odds.toString())
+      }
+    }, [match.odds, matchApiOdds])
 
     const handleAbort = async () => {
       try {
-        // Bestimme welches Team abgebrochen werden soll
         const teamToAbort = homeTeamOver250 ? 'home' : 'away'
         const teamName = homeTeamOver250 ? match.home_team.short_name : match.away_team.short_name
 
-        // Setze Abbruch in bets Tabelle
         const { error } = await supabase
           .from('bets')
           .update({
@@ -374,7 +507,6 @@ export default function BetsPage() {
 
         if (error) throw error
 
-        // Entferne Alternative
         setAlternativeStakes(prev => {
           const newMap = new Map(prev)
           newMap.delete(match.id)
@@ -382,8 +514,6 @@ export default function BetsPage() {
         })
 
         alert(`Abbruch für ${teamName} erfolgreich! Einsatz wird beim nächsten Spieltag auf 1€ zurückgesetzt.`)
-        
-        // Reload data
         window.location.reload()
       } catch (error) {
         console.error('Fehler beim Abbruch:', error)
@@ -392,7 +522,6 @@ export default function BetsPage() {
     }
 
     const handleQuoteAdjust = () => {
-      // Öffne Modal für Anpassung
       handleAcceptAlternative(match.id)
     }
 
@@ -476,6 +605,32 @@ export default function BetsPage() {
             </div>
           )}
 
+          {/* NEU: Tipico X-Quote Anzeige - nur Unentschieden */}
+          {canBet && matchApiOdds?.draw && (
+            <div className="mt-2 bg-slate-50 border border-slate-200 rounded-lg p-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] sm:text-xs text-slate-600 font-medium">Tipico Quote (X):</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-base sm:text-lg font-bold text-slate-700">
+                    {matchApiOdds.draw.toFixed(2)}
+                  </span>
+                  {loadingApiOdds && (
+                    <div className="text-[10px] text-slate-400">Lädt...</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* Info wenn keine Tipico-Quote verfügbar */}
+          {canBet && !matchApiOdds?.draw && !loadingApiOdds && (
+            <div className="mt-2 bg-amber-50 border border-amber-200 rounded-lg p-2">
+              <div className="text-[10px] sm:text-xs text-amber-700">
+                ⚠️ Keine Tipico-Quote verfügbar
+              </div>
+            </div>
+          )}
+
           {/* Bereits getippt */}
           {isAlreadyBet && !hasMatchStarted && (
             <div className="bg-green-50 border border-green-200 rounded-lg p-2 sm:p-3">
@@ -502,7 +657,6 @@ export default function BetsPage() {
                 ⚠️ Einsatz über 250€ - Aktion erforderlich:
               </div>
               
-              {/* Info welches Team betroffen ist */}
               <div className="text-[10px] sm:text-xs text-slate-600 mb-2 sm:mb-3">
                 {homeTeamOver250 && (
                   <span className="font-semibold text-orange-700">
@@ -517,7 +671,6 @@ export default function BetsPage() {
                 )}
               </div>
 
-              {/* Alternative Einsatz Info */}
               {calculatedAlternative && (
                 <>
                   <div className="flex items-center justify-between mb-1 sm:mb-2">
@@ -532,7 +685,6 @@ export default function BetsPage() {
                 </>
               )}
 
-              {/* Action Buttons - Mobile Stack */}
               <div className="flex flex-col sm:flex-row gap-1.5 sm:gap-2">
                 <button
                   onClick={handleQuoteAdjust}
@@ -565,7 +717,6 @@ export default function BetsPage() {
 
     const handleAbort = async (teamToAbort: 'home' | 'away') => {
       try {
-        // Setze Abbruch in bets Tabelle
         const { error } = await supabase
           .from('bets')
           .update({
@@ -575,7 +726,6 @@ export default function BetsPage() {
 
         if (error) throw error
 
-        // Aktualisiere lokalen State
         const updateMatches = (matches: Match[]) =>
           matches.map(m => {
             if (m.id === modalMatchId) {
@@ -599,7 +749,6 @@ export default function BetsPage() {
         setBl1Matches(updateMatches)
         setBl2Matches(updateMatches)
 
-        // Entferne Alternative
         setAlternativeStakes(prev => {
           const newMap = new Map(prev)
           newMap.delete(modalMatchId)
@@ -695,7 +844,6 @@ export default function BetsPage() {
     )
   }
 
-  // Berechne Statistiken
   const calculateStats = (matches: Match[]) => {
     const totalStake = matches.reduce((sum, m) => sum + m.total_stake, 0)
     const avgStake = matches.length > 0 ? totalStake / matches.length : 0
@@ -712,7 +860,6 @@ export default function BetsPage() {
   const isFirstMatchday = currentIndex === 0
   const isLastMatchday = currentIndex === availableMatchdays.length - 1
 
-  // ✅ NEU: Zeige Loading bis Spieltag ermittelt wurde
   if (selectedMatchday === null) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
@@ -732,11 +879,9 @@ export default function BetsPage() {
       <Header />
       
       <div className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-6 lg:px-8">
-        {/* Spieltag-Auswahl + Pfeilbuttons + Ligen-Toggle - Mobile optimiert */}
+        {/* Spieltag-Auswahl + Pfeilbuttons + Ligen-Toggle */}
         <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-end gap-2 sm:gap-3 mb-4 sm:mb-6">
-          {/* Spieltag Navigation */}
           <div className="flex items-end gap-2 flex-1 min-w-0">
-            {/* Vorheriger Spieltag */}
             <button
               onClick={goToPreviousMatchday}
               disabled={isFirstMatchday}
@@ -752,7 +897,6 @@ export default function BetsPage() {
               </svg>
             </button>
 
-            {/* Spieltag Dropdown */}
             <div className="flex-1 min-w-0">
               <label htmlFor="matchday" className="block text-xs sm:text-sm font-medium text-slate-700 mb-1 sm:mb-2">
                 Spieltag
@@ -771,7 +915,6 @@ export default function BetsPage() {
               </select>
             </div>
 
-            {/* Nächster Spieltag */}
             <button
               onClick={goToNextMatchday}
               disabled={isLastMatchday}
@@ -788,9 +931,7 @@ export default function BetsPage() {
             </button>
           </div>
 
-          {/* Ligen-Toggle - Mobile Stack */}
           <div className="flex gap-2 justify-center sm:justify-start">
-            {/* 1. Bundesliga Toggle */}
             <button
               onClick={() => setShowBl1(!showBl1)}
               className={`px-3 sm:px-3 py-2 rounded-lg font-semibold text-[10px] sm:text-xs transition flex-1 sm:flex-none ${
@@ -802,7 +943,6 @@ export default function BetsPage() {
               1. BL
             </button>
 
-            {/* 2. Bundesliga Toggle */}
             <button
               onClick={() => setShowBl2(!showBl2)}
               className={`px-3 sm:px-3 py-2 rounded-lg font-semibold text-[10px] sm:text-xs transition flex-1 sm:flex-none ${
@@ -823,7 +963,7 @@ export default function BetsPage() {
           </div>
         ) : (
           <>
-            {/* Gesamt-Statistiken - Mobile optimiert */}
+            {/* Gesamt-Statistiken */}
             <div className="grid grid-cols-3 gap-1.5 sm:gap-2 md:gap-4 mb-4 sm:mb-6">
               <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-2 sm:p-3 md:p-5">
                 <div className="text-[10px] sm:text-xs md:text-sm text-slate-600 mb-0.5 sm:mb-1">Gesamt</div>
@@ -905,7 +1045,6 @@ export default function BetsPage() {
               </div>
             )}
 
-            {/* Keine Liga ausgewählt */}
             {!showBl1 && !showBl2 && (
               <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-8 sm:p-12 text-center">
                 <p className="text-slate-500 text-sm">Bitte mindestens eine Liga auswählen</p>
@@ -915,7 +1054,6 @@ export default function BetsPage() {
         )}
       </div>
 
-      {/* Modal */}
       <Modal />
     </div>
   )
