@@ -341,7 +341,7 @@ export default function BetsPage() {
     const matchApiOdds = apiOdds.get(match.id)
     
     // NEU: Verwende Tipico X-Quote als Default, falls verfügbar
-    const defaultOdds = matchApiOdds?.draw || match.odds || match.odds_x.toFixed(2) || 3.4
+    const defaultOdds = matchApiOdds?.draw || match.odds || match.odds_x
     const [oddsInput, setOddsInput] = useState<string>(defaultOdds.toString())
     
     const alternative = alternativeStakes.get(match.id)
@@ -357,7 +357,7 @@ export default function BetsPage() {
     const awayTeamOver250 = match.away_stake > 250
     const anyTeamOver250 = homeTeamOver250 || awayTeamOver250
 
-    const currentOdds = parseFloat(oddsInput) || match.odds_x.toFixed(2) || 3.4
+    const currentOdds = parseFloat(oddsInput) || match.odds_x.toFixed(2)
     const calculatedAlternative = anyTeamOver250 ? calculateAlternativeStake(match.total_stake, currentOdds) : null
 
     useEffect(() => {
