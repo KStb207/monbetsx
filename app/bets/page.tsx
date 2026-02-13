@@ -342,7 +342,7 @@ export default function BetsPage() {
     
     // NEU: Verwende Tipico X-Quote als Default, falls verfügbar
     const defaultOdds = matchApiOdds?.draw || match.odds || match.odds_x
-    const [oddsInput, setOddsInput] = useState<string>(defaultOdds.toString())
+    //const [oddsInput, setOddsInput] = useState<string>(defaultOdds.toString())
     
     const alternative = alternativeStakes.get(match.id)
     const isAlreadyBet = match.odds !== null && match.odds !== undefined
