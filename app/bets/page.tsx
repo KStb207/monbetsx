@@ -156,15 +156,11 @@ export default function BetsPage() {
       if (bl1Data) {
         const enrichedBl1 = enrichMatches(bl1Data)
         setBl1Matches(enrichedBl1)
-        // NEU: Lade API-Quoten für 1. Bundesliga
-        fetchOddsFromAPI(enrichedBl1, 'soccer_germany_bundesliga')
       }
       
       if (bl2Data) {
         const enrichedBl2 = enrichMatches(bl2Data)
         setBl2Matches(enrichedBl2)
-        // NEU: Lade API-Quoten für 2. Bundesliga
-        fetchOddsFromAPI(enrichedBl2, 'soccer_germany_bundesliga2')
       }
       
       setLoading(false)
