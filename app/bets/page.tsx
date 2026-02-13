@@ -106,13 +106,6 @@ const fetchOddsFromAPI = async (matches: Match[], leagueKey: string) => {
     console.log(`\n📊 Gesamt: ${data.length} Spiele gefunden\n`)
     
     const newOddsMap = new Map<number, ApiOdds>()
-
-    // Matche die API-Daten mit deinen Spielen
-    matches.forEach(match => {
-      console.log('─'.repeat(80))
-      console.log(`🔍 Suche Match für: ${match.home_team.short_name} vs ${match.away_team.short_name}`)
-      console.log(`   DB Home odds_api_id: "${match.home_team.odds_api_id}"`)
-      console.log(`   DB Away odds_api_id: "${match.away_team.odds_api_id}"`)
       
       const apiMatch = data.find((game: any) => {
   // Test nur für das erste Spiel
