@@ -15,16 +15,17 @@ interface Match {
   is_finished: boolean
   result: string | null
   league_shortcut: string
-  odds_x: number | null // <- NEU!
   home_team: {
     id: number
     name: string
     short_name: string
+    odds_api_id?: string // NEU: API Team ID
   }
   away_team: {
     id: number
     name: string
     short_name: string
+    odds_api_id?: string // NEU: API Team ID
   }
   home_stake: number
   away_stake: number
@@ -67,6 +68,75 @@ export default function BetsPage() {
   const [apiOdds, setApiOdds] = useState<Map<number, ApiOdds>>(new Map())
   const [loadingApiOdds, setLoadingApiOdds] = useState(false)
 
+  // NEU: Funktion zum Laden der API-Quoten (nur Unentschieden von Tipico)
+  const fetchOddsFromAPI = async (matches: Match[], leagueKey: string) => {
+    setLoadingApiOdds(true)
+    try {
+      const apiKey = process.env.NEXT_PUBLIC_ODDS_API_KEY
+      const response = await fetch(
+        `https://api.the-odds-api.com/v4/sports/${leagueKey}/odds/?apiKey=${apiKey}&regions=eu&markets=h2h&oddsFormat=decimal&bookmakers=tipico`,
+        { next: { revalidate: 3600 } } // Cache für 1 Stunde
+      )
+
+      if (!response.ok) {
+        console.error('API Error:', response.status)
+        return
+      }
+
+      const data = await response.json()
+      console.log('API Response:', data) // DEBUG: Zeigt welche Teams die API zurückgibt
+      
+      const newOddsMap = new Map<number, ApiOdds>()
+
+      // Matche die API-Daten mit deinen Spielen
+      matches.forEach(match => {
+        const apiMatch = data.find((game: any) => {
+          // Versuche über Team-Namen oder API-IDs zu matchen
+          const homeMatch = game.home_team === match.home_team.name || 
+                          game.home_team === match.home_team.short_name ||
+                          (match.home_team.odds_api_id && game.home_team === match.home_team.odds_api_id)
+          
+          const awayMatch = game.away_team === match.away_team.name || 
+                          game.away_team === match.away_team.short_name ||
+                          (match.away_team.odds_api_id && game.away_team === match.away_team.odds_api_id)
+          
+          return homeMatch && awayMatch
+        })
+
+        if (apiMatch && apiMatch.bookmakers && apiMatch.bookmakers.length > 0) {
+          // Suche nach Tipico Bookmaker
+          const tipicoBookmaker = apiMatch.bookmakers.find((b: any) => b.key === 'tipico')
+          
+          if (tipicoBookmaker) {
+            const h2hMarket = tipicoBookmaker.markets.find((m: any) => m.key === 'h2h')
+            
+            if (h2hMarket && h2hMarket.outcomes) {
+              const drawOdds = h2hMarket.outcomes.find((o: any) => o.name === 'Draw')
+
+              newOddsMap.set(match.id, {
+                home: null,
+                draw: drawOdds?.price || null,
+                away: null
+              })
+              
+              console.log(`Match ${match.home_team.short_name} vs ${match.away_team.short_name}: X = ${drawOdds?.price}`) // DEBUG
+            }
+          } else {
+            console.log(`Tipico nicht verfügbar für: ${match.home_team.short_name} vs ${match.away_team.short_name}`) // DEBUG
+          }
+        } else {
+          console.log(`Kein Match gefunden für: ${match.home_team.short_name} vs ${match.away_team.short_name}`) // DEBUG
+          console.log(`API Team-Namen:`, data.map((g: any) => `${g.home_team} vs ${g.away_team}`).join(', ')) // DEBUG
+        }
+      })
+
+      setApiOdds(prev => new Map([...prev, ...newOddsMap]))
+    } catch (error) {
+      console.error('Fehler beim Laden der API-Quoten:', error)
+    } finally {
+      setLoadingApiOdds(false)
+    }
+  }
 
   // Lade verfügbare Spieltage und setze nächsten Spieltag
   useEffect(() => {
@@ -104,7 +174,6 @@ export default function BetsPage() {
         .from('matches')
         .select(`
           *,
-		  odds_x,
           home_team:teams!matches_home_team_id_fkey(id, name, short_name, odds_api_id),
           away_team:teams!matches_away_team_id_fkey(id, name, short_name, odds_api_id)
         `)
@@ -116,7 +185,6 @@ export default function BetsPage() {
         .from('matches')
         .select(`
           *,
-		  odds_x,
           home_team:teams!matches_home_team_id_fkey(id, name, short_name, odds_api_id),
           away_team:teams!matches_away_team_id_fkey(id, name, short_name, odds_api_id)
         `)
@@ -156,11 +224,15 @@ export default function BetsPage() {
       if (bl1Data) {
         const enrichedBl1 = enrichMatches(bl1Data)
         setBl1Matches(enrichedBl1)
+        // NEU: Lade API-Quoten für 1. Bundesliga
+        fetchOddsFromAPI(enrichedBl1, 'soccer_germany_bundesliga')
       }
       
       if (bl2Data) {
         const enrichedBl2 = enrichMatches(bl2Data)
         setBl2Matches(enrichedBl2)
+        // NEU: Lade API-Quoten für 2. Bundesliga
+        fetchOddsFromAPI(enrichedBl2, 'soccer_germany_bundesliga2')
       }
       
       setLoading(false)
@@ -341,8 +413,8 @@ export default function BetsPage() {
     const matchApiOdds = apiOdds.get(match.id)
     
     // NEU: Verwende Tipico X-Quote als Default, falls verfügbar
-    const defaultOdds = matchApiOdds?.draw || match.odds || match.odds_x
-    //const [oddsInput, setOddsInput] = useState<string>(defaultOdds.toString())
+    const defaultOdds = matchApiOdds?.draw || match.odds || 3.40
+    const [oddsInput, setOddsInput] = useState<string>(defaultOdds.toString())
     
     const alternative = alternativeStakes.get(match.id)
     const isAlreadyBet = match.odds !== null && match.odds !== undefined
@@ -357,7 +429,7 @@ export default function BetsPage() {
     const awayTeamOver250 = match.away_stake > 250
     const anyTeamOver250 = homeTeamOver250 || awayTeamOver250
 
-    const currentOdds = parseFloat(oddsInput) || match.odds_x.toFixed(2)
+    const currentOdds = parseFloat(oddsInput) || 3.40
     const calculatedAlternative = anyTeamOver250 ? calculateAlternativeStake(match.total_stake, currentOdds) : null
 
     useEffect(() => {
