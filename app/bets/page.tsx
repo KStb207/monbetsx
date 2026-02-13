@@ -31,6 +31,7 @@ interface Match {
   away_stake: number
   total_stake: number
   odds: number | null
+  odds_x: number | null
 }
 
 interface AlternativeStake {
@@ -497,7 +498,7 @@ export default function BetsPage() {
             {/* Heimteam */}
             <div className="flex items-center justify-between">
               <span className={`text-sm sm:text-base font-semibold ${homeTeamOver250 ? 'text-orange-600' : 'text-slate-800'}`}>
-                {match.home_team.short_name}
+                {match.home_team.short_name} {match.odds_x}
               </span>
               <span className={`text-xs sm:text-sm font-bold ${homeTeamOver250 ? 'text-orange-600' : 'text-slate-600'}`}>
                 {formatCurrency(match.home_stake)}
@@ -560,7 +561,7 @@ export default function BetsPage() {
                 <span className="text-[10px] sm:text-xs text-slate-600 font-medium">Tipico Quote (X):</span>
                 <div className="flex items-center gap-2">
                   <span className="text-base sm:text-lg font-bold text-slate-700">
-                    {matchApiOdds.draw.toFixed(2)}
+				  {match.odds_x}
                   </span>
                   {loadingApiOdds && (
                     <div className="text-[10px] text-slate-400">Lädt...</div>
