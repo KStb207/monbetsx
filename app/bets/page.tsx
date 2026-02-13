@@ -74,7 +74,7 @@ export default function BetsPage() {
     try {
       const apiKey = process.env.NEXT_PUBLIC_ODDS_API_KEY
       const response = await fetch(
-        `https://api.the-odds-api.com/v4/sports/${leagueKey}/odds/?apiKey=${apiKey}&regions=eu&markets=h2h&oddsFormat=decimal&bookmakers=tipico`,
+        `https://api.the-odds-api.com/v4/sports/${leagueKey}/odds/?apiKey=${apiKey}&regions=eu&markets=h2h&oddsFormat=decimal&bookmakers=tipico_de`,
         { next: { revalidate: 3600 } } // Cache für 1 Stunde
       )
 
@@ -105,7 +105,7 @@ export default function BetsPage() {
 
         if (apiMatch && apiMatch.bookmakers && apiMatch.bookmakers.length > 0) {
           // Suche nach Tipico Bookmaker
-          const tipicoBookmaker = apiMatch.bookmakers.find((b: any) => b.key === 'tipico')
+          const tipicoBookmaker = apiMatch.bookmakers.find((b: any) => b.key === 'tipico_de')
           
           if (tipicoBookmaker) {
             const h2hMarket = tipicoBookmaker.markets.find((m: any) => m.key === 'h2h')
