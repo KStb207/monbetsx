@@ -56,7 +56,7 @@ serve(async (req) => {
       console.log(`\n📊 Verarbeite ${league.name}...`)
       
       // 1. API-Daten holen
-      const apiUrl = `https://api.the-odds-api.com/v4/sports/${league.key}/odds/?apiKey=${oddsApiKey}&regions=eu&markets=h2h&oddsFormat=decimal&bookmakers=tipico`
+      const apiUrl = `https://api.the-odds-api.com/v4/sports/${league.key}/odds/?apiKey=${oddsApiKey}&regions=eu&markets=h2h&oddsFormat=decimal&bookmakers=tipico_de`
       
       const apiResponse = await fetch(apiUrl)
       if (!apiResponse.ok) {
@@ -69,18 +69,34 @@ serve(async (req) => {
       console.log(`   ✅ ${apiData.length} Spiele von API erhalten`)
 
       // 2. Matches aus DB holen (nächste 2 Spieltage)
-      const { data: matches, error: matchesError } = await supabase
-        .from('matches')
-        .select(`
-          id,
-          matchday,
-          home_team:teams!matches_home_team_id_fkey(id, name, short_name, odds_api_id),
-          away_team:teams!matches_away_team_id_fkey(id, name, short_name, odds_api_id)
-        `)
-        .eq('league_shortcut', league.shortcut)
-        .eq('is_finished', false)
-        .order('match_date', { ascending: true })
-        .limit(18) // Max 2 Spieltage
+      const { data: matchdayData } = await supabase
+  .from('matches')
+  .select('matchday')
+  .eq('league_shortcut', league.shortcut)
+  .eq('is_finished', false)
+  .order('match_date', { ascending: true })
+  .limit(1)
+
+const currentMatchday = matchdayData?.[0]?.matchday
+
+if (!currentMatchday) {
+  console.log(`   ⚠️ Kein offener Spieltag gefunden`)
+  continue
+}
+
+console.log(`   📅 Aktueller Spieltag: ${currentMatchday}`)
+
+const { data: matches, error: matchesError } = await supabase
+  .from('matches')
+  .select(`
+    id,
+    matchday,
+    home_team:teams!matches_home_team_id_fkey(id, name, short_name, odds_api_id),
+    away_team:teams!matches_away_team_id_fkey(id, name, short_name, odds_api_id)
+  `)
+  .eq('league_shortcut', league.shortcut)
+  .eq('matchday', currentMatchday) // <- NEU: Nur aktueller Spieltag!
+  .order('match_date', { ascending: true })
 
       if (matchesError) {
         console.error(`❌ DB Error für ${league.name}:`, matchesError)
@@ -115,7 +131,7 @@ serve(async (req) => {
         }
 
         // Finde Tipico Bookmaker
-        const tipico = apiGame.bookmakers.find(b => b.key === 'tipico')
+        const tipico = apiGame.bookmakers.find(b => b.key === 'tipico_de')
         if (!tipico) {
           console.log(`   ⚠️ Kein Tipico: ${match.home_team.short_name} vs ${match.away_team.short_name}`)
           continue

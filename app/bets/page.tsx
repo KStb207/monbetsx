@@ -15,17 +15,16 @@ interface Match {
   is_finished: boolean
   result: string | null
   league_shortcut: string
+  odds_x: number | null // <- NEU!
   home_team: {
     id: number
     name: string
     short_name: string
-    odds_api_id?: string // NEU: API Team ID
   }
   away_team: {
     id: number
     name: string
     short_name: string
-    odds_api_id?: string // NEU: API Team ID
   }
   home_stake: number
   away_stake: number
@@ -226,6 +225,7 @@ const awayMatch = (match.away_team.odds_api_id && game.away_team.trim() === matc
         .from('matches')
         .select(`
           *,
+		  odds_x,
           home_team:teams!matches_home_team_id_fkey(id, name, short_name, odds_api_id),
           away_team:teams!matches_away_team_id_fkey(id, name, short_name, odds_api_id)
         `)
@@ -237,6 +237,7 @@ const awayMatch = (match.away_team.odds_api_id && game.away_team.trim() === matc
         .from('matches')
         .select(`
           *,
+		  odds_x,
           home_team:teams!matches_home_team_id_fkey(id, name, short_name, odds_api_id),
           away_team:teams!matches_away_team_id_fkey(id, name, short_name, odds_api_id)
         `)
@@ -465,7 +466,7 @@ const awayMatch = (match.away_team.odds_api_id && game.away_team.trim() === matc
     const matchApiOdds = apiOdds.get(match.id)
     
     // NEU: Verwende Tipico X-Quote als Default, falls verfügbar
-    const defaultOdds = matchApiOdds?.draw || match.odds || 3.40
+    const defaultOdds = matchApiOdds?.draw || match.odds || match.odds_x.toFixed(2)
     const [oddsInput, setOddsInput] = useState<string>(defaultOdds.toString())
     
     const alternative = alternativeStakes.get(match.id)
@@ -481,7 +482,7 @@ const awayMatch = (match.away_team.odds_api_id && game.away_team.trim() === matc
     const awayTeamOver250 = match.away_stake > 250
     const anyTeamOver250 = homeTeamOver250 || awayTeamOver250
 
-    const currentOdds = parseFloat(oddsInput) || 3.40
+    const currentOdds = parseFloat(oddsInput) || match.odds_x.toFixed(2)
     const calculatedAlternative = anyTeamOver250 ? calculateAlternativeStake(match.total_stake, currentOdds) : null
 
     useEffect(() => {
