@@ -19,19 +19,20 @@ interface Match {
     id: number
     name: string
     short_name: string
-    odds_api_id?: string // NEU: API Team ID
+    odds_api_id?: string
   }
   away_team: {
     id: number
     name: string
     short_name: string
-    odds_api_id?: string // NEU: API Team ID
+    odds_api_id?: string
   }
   home_stake: number
   away_stake: number
   total_stake: number
   odds: number | null
   odds_x: number | null
+  bet_total_stake: number | null // NEU: Gesamteinsatz aus bets Tabelle
 }
 
 interface AlternativeStake {
@@ -206,20 +207,24 @@ export default function BetsPage() {
       
       const { data: bets } = await supabase
         .from('bets')
-        .select('match_id, odds')
+        .select('match_id, odds, total_stake')
         .in('match_id', allMatchIds)
       
       const stakesMap = new Map(stakes?.map(s => [s.team_id, s.stake]) || [])
-      const betsMap = new Map(bets?.map(b => [b.match_id, b.odds]) || [])
+      const betsMap = new Map(bets?.map(b => [b.match_id, { odds: b.odds, total_stake: b.total_stake }]) || [])
       
       const enrichMatches = (matches: any[]): Match[] => {
-        return matches.map(match => ({
-          ...match,
-          home_stake: stakesMap.get(match.home_team_id) || 0,
-          away_stake: stakesMap.get(match.away_team_id) || 0,
-          total_stake: (stakesMap.get(match.home_team_id) || 0) + (stakesMap.get(match.away_team_id) || 0),
-          odds: betsMap.get(match.id) || null
-        }))
+        return matches.map(match => {
+          const betData = betsMap.get(match.id)
+          return {
+            ...match,
+            home_stake: stakesMap.get(match.home_team_id) || 0,
+            away_stake: stakesMap.get(match.away_team_id) || 0,
+            total_stake: (stakesMap.get(match.home_team_id) || 0) + (stakesMap.get(match.away_team_id) || 0),
+            odds: betData?.odds || null,
+            bet_total_stake: betData?.total_stake || null
+          }
+        })
       }
       
       if (bl1Data) {
@@ -413,9 +418,9 @@ export default function BetsPage() {
     // NEU: Hole API-Quoten für dieses Spiel
     const matchApiOdds = apiOdds.get(match.id)
     
-    // NEU: Verwende Tipico X-Quote als Default, falls verfügbar
-    const defaultOdds = matchApiOdds?.draw || match.odds || 3.40
-    const [oddsInput, setOddsInput] = useState<string>(defaultOdds.toString())
+    // Verwende total_stake als Default für Einsatz
+    const defaultStake = match.odds || match.total_stake
+    const [oddsInput, setOddsInput] = useState<string>(defaultStake.toString())
     
     const alternative = alternativeStakes.get(match.id)
     const isAlreadyBet = match.odds !== null && match.odds !== undefined
@@ -434,13 +439,13 @@ export default function BetsPage() {
     const calculatedAlternative = anyTeamOver250 ? calculateAlternativeStake(match.total_stake, currentOdds) : null
 
     useEffect(() => {
-      // Update input wenn API-Quoten geladen wurden oder Match odds sich ändern
-      if (matchApiOdds?.draw && !match.odds) {
-        setOddsInput(matchApiOdds.draw.toString())
-      } else if (match.odds) {
+      // Update input wenn Match odds sich ändern
+      if (match.odds) {
         setOddsInput(match.odds.toString())
+      } else {
+        setOddsInput(match.total_stake.toString())
       }
-    }, [match.odds, matchApiOdds])
+    }, [match.odds, match.total_stake])
 
     const handleAbort = async () => {
       try {
@@ -497,9 +502,17 @@ export default function BetsPage() {
           <div className="space-y-1.5 sm:space-y-2 mb-2 sm:mb-3">
             {/* Heimteam */}
             <div className="flex items-center justify-between">
-              <span className={`text-sm sm:text-base font-semibold ${homeTeamOver250 ? 'text-orange-600' : 'text-slate-800'}`}>
-                {match.home_team.short_name} {match.odds_x}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className={`text-sm sm:text-base font-semibold ${homeTeamOver250 ? 'text-orange-600' : 'text-slate-800'}`}>
+                  {match.home_team.short_name}
+                </span>
+                {/* NEU: Zeige Tore wenn Spiel läuft oder beendet */}
+                {(hasMatchStarted || match.is_finished) && match.home_goals !== null && (
+                  <span className="text-lg sm:text-xl font-bold text-slate-700">
+                    {match.home_goals}
+                  </span>
+                )}
+              </div>
               <span className={`text-xs sm:text-sm font-bold ${homeTeamOver250 ? 'text-orange-600' : 'text-slate-600'}`}>
                 {formatCurrency(match.home_stake)}
               </span>
@@ -507,77 +520,90 @@ export default function BetsPage() {
 
             {/* Auswärtsteam */}
             <div className="flex items-center justify-between">
-              <span className={`text-sm sm:text-base font-semibold ${awayTeamOver250 ? 'text-orange-600' : 'text-slate-800'}`}>
-                {match.away_team.short_name}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className={`text-sm sm:text-base font-semibold ${awayTeamOver250 ? 'text-orange-600' : 'text-slate-800'}`}>
+                  {match.away_team.short_name}
+                </span>
+                {/* NEU: Zeige Tore wenn Spiel läuft oder beendet */}
+                {(hasMatchStarted || match.is_finished) && match.away_goals !== null && (
+                  <span className="text-lg sm:text-xl font-bold text-slate-700">
+                    {match.away_goals}
+                  </span>
+                )}
+              </div>
               <span className={`text-xs sm:text-sm font-bold ${awayTeamOver250 ? 'text-orange-600' : 'text-slate-600'}`}>
                 {formatCurrency(match.away_stake)}
               </span>
             </div>
           </div>
 
-          {/* Gesamteinsatz */}
-          <div className="flex items-center justify-between pt-2 border-t border-slate-100 mb-2 sm:mb-3">
-            <span className="text-xs sm:text-sm text-slate-600">Gesamteinsatz:</span>
-            <span className={`text-sm sm:text-base font-bold ${anyTeamOver250 ? 'text-orange-600' : 'text-blue-700'}`}>
-              {formatCurrency(match.total_stake)}
-            </span>
-          </div>
+          {/* Tipico Quote (X) - ersetzt Gesamteinsatz */}
+          {match.odds_x ? (
+            <div className="flex items-center justify-between pt-2 border-t border-slate-100 mb-2 sm:mb-3">
+              <span className="text-xs sm:text-sm text-slate-600">Tipico Quote (X):</span>
+              <span className="text-sm sm:text-base font-bold text-green-700">
+                {match.odds_x.toFixed(2)}
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between pt-2 border-t border-slate-100 mb-2 sm:mb-3">
+              <span className="text-xs sm:text-sm text-amber-700">⚠️ Keine Tipico-Quote</span>
+              <span className="text-xs sm:text-sm font-bold text-slate-600">
+                Einsatz: {formatCurrency(match.total_stake)}
+              </span>
+            </div>
+          )}
 
-          {/* Quote Input & Save Button */}
+          {/* NEU: Gesetzter Gesamteinsatz unter Tipico Quote */}
+          {match.bet_total_stake && (
+            <div className="flex items-center justify-between mb-2 sm:mb-3 bg-blue-50 border border-blue-200 rounded-lg p-2">
+              <span className="text-xs sm:text-sm text-blue-700 font-medium">Gesamteinsatz:</span>
+              <span className="text-sm sm:text-base font-bold text-blue-700">
+                {formatCurrency(match.bet_total_stake)}
+              </span>
+            </div>
+          )}
+
+          {/* Einsatz Input & Save Button */}
           {canBet && (
-            <div className="flex gap-1.5 sm:gap-2">
-              <input
-                type="number"
-                step="0.01"
-                min="1.01"
-                max="100"
-                value={oddsInput}
-                onChange={(e) => setOddsInput(e.target.value)}
-                className="flex-1 px-2 sm:px-3 py-1.5 sm:py-2 border border-slate-300 rounded-lg text-xs sm:text-sm font-semibold text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                placeholder="Quote"
-              />
-              <button
-                onClick={() => {
-                  const odds = parseFloat(oddsInput)
-                  if (odds >= 1.01 && odds <= 100) {
-                    handleSaveOdds(match.id, odds, match)
-                  } else {
-                    alert('Bitte eine Quote zwischen 1.01 und 100 eingeben')
-                  }
-                }}
-                disabled={savingMatchId === match.id}
-                className="px-3 sm:px-4 py-1.5 sm:py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white rounded-lg transition font-semibold text-xs sm:text-sm whitespace-nowrap"
-              >
-                {savingMatchId === match.id ? 'Speichert...' : 'Speichern'}
-              </button>
-            </div>
-          )}
-
-          {/* NEU: Tipico X-Quote Anzeige - nur Unentschieden */}
-          {canBet && matchApiOdds?.draw && (
-            <div className="mt-2 bg-slate-50 border border-slate-200 rounded-lg p-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] sm:text-xs text-slate-600 font-medium">Tipico Quote (X):</span>
-                <div className="flex items-center gap-2">
-                  <span className="text-base sm:text-lg font-bold text-slate-700">
-				  {match.odds_x}
+            <>
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <span className="text-xs sm:text-sm text-slate-600 font-medium whitespace-nowrap">Einsatz:</span>
+                <input
+                  type="number"
+                  step="1"
+                  min="1"
+                  max="1000"
+                  value={oddsInput}
+                  onChange={(e) => setOddsInput(e.target.value)}
+                  className="flex-1 px-2 sm:px-3 py-1.5 sm:py-2 border border-slate-300 rounded-lg text-xs sm:text-sm font-semibold text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                  placeholder="Einsatz"
+                />
+                <button
+                  onClick={() => {
+                    const stake = parseFloat(oddsInput)
+                    if (stake >= 1 && stake <= 1000) {
+                      handleSaveOdds(match.id, stake, match)
+                    } else {
+                      alert('Bitte einen Einsatz zwischen 1€ und 1000€ eingeben')
+                    }
+                  }}
+                  disabled={savingMatchId === match.id}
+                  className="px-8 sm:px-5 py-1.5 sm:py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white rounded-lg transition font-semibold text-xs sm:text-sm whitespace-nowrap"
+                >
+                  {savingMatchId === match.id ? '...' : 'Speichern'}
+                </button>
+              </div>
+              
+              {/* Potenzieller Gewinn */}
+              {match.odds_x && oddsInput && parseFloat(oddsInput) > 0 && (
+                <div className="flex items-center justify-end mt-1">
+                  <span className="text-[10px] sm:text-xs text-slate-500">
+                    Gewinn: {formatCurrency(parseFloat(oddsInput) * match.odds_x)}
                   </span>
-                  {loadingApiOdds && (
-                    <div className="text-[10px] text-slate-400">Lädt...</div>
-                  )}
                 </div>
-              </div>
-            </div>
-          )}
-          
-          {/* Info wenn keine Tipico-Quote verfügbar */}
-          {canBet && !matchApiOdds?.draw && !loadingApiOdds && (
-            <div className="mt-2 bg-amber-50 border border-amber-200 rounded-lg p-2">
-              <div className="text-[10px] sm:text-xs text-amber-700">
-                ⚠️ Keine Tipico-Quote verfügbar
-              </div>
-            </div>
+              )}
+            </>
           )}
 
           {/* Bereits getippt */}
