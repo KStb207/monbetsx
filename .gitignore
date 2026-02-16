@@ -42,3 +42,6 @@ next-env.d.ts
 
 # Supabase
 .supabase/
+
+# Supabase Edge Functions (nicht für Next.js Build)
+supabase/functions/
