@@ -113,25 +113,25 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-700 px-4">
-      <div className="bg-white p-6 sm:p-8 rounded-lg shadow-2xl w-full max-w-md">
-        <h1 className="text-2xl sm:text-3xl font-bold text-center mb-2 text-slate-800">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-700 px-3">
+      <div className="bg-white p-5 sm:p-8 rounded-lg shadow-2xl w-full max-w-sm sm:max-w-md">
+        <h1 className="text-xl sm:text-3xl font-bold text-center mb-1 sm:mb-2 text-slate-800">
           MonBetsX
         </h1>
-        <p className="text-sm sm:text-base text-center text-slate-600 mb-6 sm:mb-8">
+        <p className="text-xs sm:text-base text-center text-slate-600 mb-5 sm:mb-8">
           Bitte 8-stellige PIN eingeben
         </p>
 
         <form onSubmit={(e) => { e.preventDefault(); handleSubmit() }} className="space-y-4 sm:space-y-6">
           {/* PIN Input */}
-          <div className="flex justify-center gap-1 sm:gap-2">
+          <div className="flex justify-center gap-1">
             {pin.map((digit, index) => {
               const maskLetters = ['M', 'o', 'n', 'B', 'e', 't', 's', 'X']
               return (
                 <div key={index} className="relative">
                   {/* Sichtbares Display-Feld */}
                   <div 
-                    className="w-10 h-10 sm:w-12 sm:h-12 text-center text-lg sm:text-2xl leading-[40px] sm:leading-[48px] font-bold border-2 border-slate-300 rounded-lg focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 transition text-slate-900 bg-white cursor-pointer"
+                    className="w-8 h-8 sm:w-10 sm:h-10 text-center text-sm sm:text-lg leading-[32px] sm:leading-[40px] font-bold border-2 border-slate-300 rounded focus-within:ring-1 focus-within:ring-blue-500 focus-within:border-blue-500 transition text-slate-900 bg-white cursor-pointer"
                     onClick={() => inputRefs[index].current?.focus()}
                   >
                     {digit ? maskLetters[index] : ''}
