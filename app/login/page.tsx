@@ -113,25 +113,25 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-700">
-      <div className="bg-white p-8 rounded-lg shadow-2xl w-full max-w-md">
-        <h1 className="text-3xl font-bold text-center mb-2 text-slate-800">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-700 px-4">
+      <div className="bg-white p-6 sm:p-8 rounded-lg shadow-2xl w-full max-w-md">
+        <h1 className="text-2xl sm:text-3xl font-bold text-center mb-2 text-slate-800">
           MonBetsX
         </h1>
-        <p className="text-center text-slate-600 mb-8">
+        <p className="text-sm sm:text-base text-center text-slate-600 mb-6 sm:mb-8">
           Bitte 8-stellige PIN eingeben
         </p>
 
-        <form onSubmit={(e) => { e.preventDefault(); handleSubmit() }} className="space-y-6">
+        <form onSubmit={(e) => { e.preventDefault(); handleSubmit() }} className="space-y-4 sm:space-y-6">
           {/* PIN Input */}
-          <div className="flex justify-center gap-2">
+          <div className="flex justify-center gap-1 sm:gap-2">
             {pin.map((digit, index) => {
               const maskLetters = ['M', 'o', 'n', 'B', 'e', 't', 's', 'X']
               return (
                 <div key={index} className="relative">
                   {/* Sichtbares Display-Feld */}
                   <div 
-                    className="w-12 h-12 text-center text-2xl leading-[48px] font-bold border-2 border-slate-300 rounded-lg focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 transition text-slate-900 bg-white cursor-pointer"
+                    className="w-10 h-10 sm:w-12 sm:h-12 text-center text-lg sm:text-2xl leading-[40px] sm:leading-[48px] font-bold border-2 border-slate-300 rounded-lg focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 transition text-slate-900 bg-white cursor-pointer"
                     onClick={() => inputRefs[index].current?.focus()}
                   >
                     {digit ? maskLetters[index] : ''}
@@ -157,7 +157,7 @@ export default function LoginPage() {
           </div>
 
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm text-center">
+            <div className="bg-red-50 border border-red-200 text-red-700 px-3 sm:px-4 py-2 sm:py-3 rounded-lg text-xs sm:text-sm text-center">
               {error}
             </div>
           )}
@@ -165,13 +165,13 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading || pin.some(d => !d)}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white font-semibold py-3 px-4 rounded-lg transition duration-200 transform hover:scale-[1.02] active:scale-[0.98]"
+            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white font-semibold py-2.5 sm:py-3 px-4 rounded-lg transition duration-200 transform hover:scale-[1.02] active:scale-[0.98] text-sm sm:text-base"
           >
             {loading ? 'Überprüfe...' : 'Anmelden'}
           </button>
         </form>
 
-        <p className="text-xs text-slate-500 text-center mt-6">
+        <p className="text-[10px] sm:text-xs text-slate-500 text-center mt-4 sm:mt-6">
           Session läuft beim Schließen/Refresh ab
         </p>
       </div>
