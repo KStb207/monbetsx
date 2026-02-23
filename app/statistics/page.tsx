@@ -231,7 +231,7 @@ export default function TeamsPage() {
   const TeamTable = ({ teams, league, containerRef }: { 
     teams: TeamRow[], 
     league: string,
-    containerRef: React.RefObject<HTMLDivElement>
+    containerRef: React.RefObject<HTMLDivElement | null>
   }) => (
     <div ref={containerRef} className="overflow-x-auto shadow-sm rounded-lg border border-slate-200">
       <table className="min-w-full divide-y divide-slate-200 bg-white">
