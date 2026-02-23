@@ -23,6 +23,7 @@ interface TeamStats {
   totalPayout: number
   profit: number
   gamesWithoutDraw: number
+  totalDraws: number // ✅ NEU
 }
 
 interface TeamRow {
@@ -41,7 +42,6 @@ export default function TeamsPage() {
   const [showBl1, setShowBl1] = useState(true)
   const [showBl2, setShowBl2] = useState(true)
 
-  // ✅ Refs für horizontales Scrollen
   const bl1ContainerRef = useRef<HTMLDivElement>(null)
   const bl2ContainerRef = useRef<HTMLDivElement>(null)
   const targetColumnRef = useRef<HTMLTableCellElement>(null)
@@ -93,7 +93,9 @@ export default function TeamsPage() {
           const matchdays: TeamMatchday[] = []
           let totalStake = 0
           let totalPayout = 0
+          let totalDraws = 0 // ✅ NEU
 
+          // Zähle Spiele ohne X von hinten
           let gamesWithoutDraw = 0
           for (let md = maxMatchday; md >= 1; md--) {
             const match = matches?.find(m => 
@@ -125,6 +127,7 @@ export default function TeamsPage() {
               
               if (match.result === 'x') {
                 result = 'x'
+                totalDraws++ // ✅ Zähle Unentschieden
                 
                 const bet = betsMap.get(match.id)
                 if (bet) {
@@ -165,7 +168,8 @@ export default function TeamsPage() {
               totalStake,
               totalPayout,
               profit: totalPayout - totalStake,
-              gamesWithoutDraw
+              gamesWithoutDraw,
+              totalDraws // ✅ NEU
             }
           }
         }
@@ -190,14 +194,12 @@ export default function TeamsPage() {
     fetchTeamsData()
   }, [])
 
-  // ✅ Horizontales Scrollen zur letzten Spieltag-Spalte
   useEffect(() => {
     if (!loading && lastPlayedMatchday > 0 && targetColumnRef.current) {
       setTimeout(() => {
         const targetElement = targetColumnRef.current
         if (!targetElement) return
 
-        // Scrolle beide Container
         const containers = [bl1ContainerRef.current, bl2ContainerRef.current].filter(Boolean)
         
         containers.forEach(container => {
@@ -206,7 +208,6 @@ export default function TeamsPage() {
             const containerWidth = container.clientWidth
             const targetWidth = targetElement.offsetWidth
             
-            // Scrolle so dass die Spalte in der Mitte ist
             const scrollPosition = targetLeft - (containerWidth / 2) + (targetWidth / 2)
             
             container.scrollTo({
@@ -243,7 +244,7 @@ export default function TeamsPage() {
             {Array.from({ length: matchdayCount }, (_, i) => i + 1).map(md => (
               <th 
                 key={md}
-                ref={md === lastPlayedMatchday ? targetColumnRef : null} // ✅ Ref nur für Positionsberechnung
+                ref={md === lastPlayedMatchday ? targetColumnRef : null}
                 className={`px-3 py-3 text-center text-xs font-semibold min-w-[80px] ${
                   md === lastPlayedMatchday 
                     ? 'bg-blue-100 text-blue-800'
@@ -260,16 +261,29 @@ export default function TeamsPage() {
             <tr key={team.id} className="hover:bg-slate-50 transition">
               <td className="sticky left-0 z-10 px-4 py-3 bg-white border-r border-slate-200 whitespace-nowrap shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
                 <div className="flex flex-col">
+                  {/* Team Name */}
                   <span className="text-sm font-semibold text-slate-800">
                     {team.short_name}
                   </span>
-                  <span className="text-xs text-blue-600 font-medium mt-0.5">
-                    ohne x: {stats.gamesWithoutDraw} {stats.gamesWithoutDraw === 1 ? 'Spiel' : 'Spiele'}
-                  </span>
+                  
+                  {/* ✅ Alle Stats in dunkelgrau (text-slate-600) */}
                   <div className="flex flex-col gap-0.5 mt-1">
-                    <span className="text-xs text-slate-500">
+                    {/* Ohne X */}
+                    <span className="text-xs text-slate-600 font-medium">
+                      ohne x: {stats.gamesWithoutDraw} {stats.gamesWithoutDraw === 1 ? 'Spiel' : 'Spiele'}
+                    </span>
+                    
+                    {/* ✅ NEU: Anzahl X */}
+                    <span className="text-xs text-slate-600 font-medium">
+                      Anzahl x: {stats.totalDraws}
+                    </span>
+                    
+                    {/* Einsatz */}
+                    <span className="text-xs text-slate-600">
                       Einsatz: <span className="font-medium text-slate-700">{formatCurrency(stats.totalStake)}</span>
                     </span>
+                    
+                    {/* Gewinn */}
                     <span className={`text-xs ${
                       stats.profit >= 0 ? 'text-green-600' : 'text-red-600'
                     }`}>
