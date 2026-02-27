@@ -253,7 +253,7 @@ export default function BetsPage() {
     return (totalStake * 3) / odds
   }
 
-  const handleSaveOdds = async (matchId: number, odds: number, match: Match) => {
+  const handleSaveOdds = async (matchId: number, stake: number, match: Match) => {
     setSavingMatchId(matchId)
     
     try {
@@ -263,10 +263,10 @@ export default function BetsPage() {
           match_id: matchId,
           matchday: selectedMatchday,
           season: '2025',
-          odds: odds,
+          odds: stake,
           home_stake: match.home_stake,
           away_stake: match.away_stake,
-          total_stake: match.total_stake
+          total_stake: stake
         }, {
           onConflict: 'match_id'
         })
@@ -274,7 +274,11 @@ export default function BetsPage() {
       if (error) throw error
       
       const updateMatches = (matches: Match[]) =>
-        matches.map(m => m.id === matchId ? { ...m, odds } : m)
+      matches.map(m => m.id === matchId ? { 
+        ...m, 
+        odds: stake,
+        bet_total_stake: stake
+      } : m)
       
       setBl1Matches(updateMatches)
       setBl2Matches(updateMatches)
@@ -611,7 +615,6 @@ export default function BetsPage() {
             <div className="bg-green-50 border border-green-200 rounded-lg p-2 sm:p-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs sm:text-sm text-green-800 font-semibold">✓ Getippt</span>
-                <span className="text-sm sm:text-base font-bold text-green-700">{match.odds?.toFixed(2)}</span>
               </div>
             </div>
           )}
