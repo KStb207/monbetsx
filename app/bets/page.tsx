@@ -284,12 +284,12 @@ export default function BetsPage() {
       setBl2Matches(updateMatches)
       
       if (match.home_stake > 250 || match.away_stake > 250) {
-        const alternative = calculateAlternativeStake(match.total_stake, odds)
+        const alternative = calculateAlternativeStake(match.total_stake, stake)
         setAlternativeStakes(prev => new Map(prev).set(matchId, {
           matchId,
           alternativeAmount: alternative,
           originalStake: match.total_stake,
-          quote: odds
+          quote: stake
         }))
       } else {
         setAlternativeStakes(prev => {
