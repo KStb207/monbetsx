@@ -25,6 +25,13 @@ export default function LoginPage() {
     inputRefs[0].current?.focus()
   }, [])
 
+  // ✅ NEU: Funktion zum Fokussieren des ersten leeren Feldes
+  const focusFirstEmptyField = () => {
+    const firstEmptyIndex = pin.findIndex(digit => digit === '')
+    const targetIndex = firstEmptyIndex === -1 ? 0 : firstEmptyIndex
+    inputRefs[targetIndex].current?.focus()
+  }
+
   const handleChange = (index: number, value: string) => {
     // Nur letzte Ziffer nehmen (falls mehrere eingegeben)
     const lastChar = value.slice(-1)
@@ -132,7 +139,7 @@ export default function LoginPage() {
                   {/* Sichtbares Display-Feld */}
                   <div 
                     className="w-8 h-8 sm:w-10 sm:h-10 text-center text-sm sm:text-lg leading-[32px] sm:leading-[40px] font-bold border-2 border-slate-300 rounded focus-within:ring-1 focus-within:ring-blue-500 focus-within:border-blue-500 transition text-slate-900 bg-white cursor-pointer"
-                    onClick={() => inputRefs[index].current?.focus()}
+                    onClick={focusFirstEmptyField} // ✅ GEÄNDERT: Immer erstes leeres Feld fokussieren
                   >
                     {digit ? maskLetters[index] : ''}
                   </div>
@@ -147,6 +154,10 @@ export default function LoginPage() {
                     onKeyDown={(e) => handleKeyDown(index, e)}
                     onPaste={index === 0 ? handlePaste : undefined}
                     onFocus={(e) => e.target.select()}
+                    onBlur={() => {
+                      // ✅ NEU: Nach Blur wieder erstes leeres Feld fokussieren
+                      setTimeout(() => focusFirstEmptyField(), 10)
+                    }}
                     className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
                     disabled={loading}
                     autoComplete="off"
