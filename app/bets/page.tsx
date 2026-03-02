@@ -301,7 +301,7 @@ export default function BetsPage() {
       
     } catch (error) {
       console.error('Fehler beim Speichern:', error)
-      alert('Fehler beim Speichern der Quote')
+      alert('Fehler beim Speichern der Quote!')
     } finally {
       setSavingMatchId(null)
     }
