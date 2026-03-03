@@ -385,7 +385,7 @@ export default function BetsPage() {
     const anyTeamOver250 = homeTeamOver250 || awayTeamOver250
 
     const currentOdds = parseFloat(oddsInput) || 3.40
-    const calculatedAlternative = anyTeamOver250 ? calculateAlternativeStake(match.total_stake, currentOdds) : null
+    const calculatedAlternative = anyTeamOver250 && effectiveOddsX ? calculateAlternativeStake(match.total_stake, effectiveOddsX) : null
 
     useEffect(() => {
       if (match.odds) {
@@ -575,7 +575,7 @@ export default function BetsPage() {
                     <span className="text-xs sm:text-sm font-bold text-orange-700">{formatCurrency(calculatedAlternative)}</span>
                   </div>
                   <div className="text-[10px] sm:text-xs text-slate-500 mb-2 sm:mb-3">
-                    Berechnung: ({formatCurrency(match.total_stake)} × 3) ÷ {currentOdds.toFixed(2)}
+                    Berechnung: ({formatCurrency(match.total_stake)} × 3) ÷ {effectiveOddsX?.toFixed(2) ?? '–'}
                   </div>
                 </>
               )}
