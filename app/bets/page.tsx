@@ -8,7 +8,7 @@ import Header from '@/components/Header'
 const LEAGUES = [
   { key: 'bl1',     label: '1. BL',    name: '1. Bundesliga',   oddsKey: 'soccer_germany_bundesliga',  season: '2025', color: 'blue',   flag: '🇩🇪' },
   { key: 'bl2',     label: '2. BL',    name: '2. Bundesliga',   oddsKey: 'soccer_germany_bundesliga2', season: '2025', color: 'slate',  flag: '🇩🇪' },
-  { key: 'epl',     label: 'EPL',      name: 'Premier League',  oddsKey: 'soccer_epl',                 season: '2025', color: 'purple', flag: '🏴󠁧󠁢󠁥󠁮󠁧󠁿' },
+  { key: 'epl',     label: 'PL',       name: 'Premier League',  oddsKey: 'soccer_epl',                 season: '2025', color: 'purple', flag: '🏴󠁧󠁢󠁥󠁮󠁧󠁿' },
   { key: 'la_liga', label: 'La Liga',  name: 'La Liga',         oddsKey: 'soccer_spain_la_liga',       season: '2025', color: 'red',    flag: '🇪🇸' },
   { key: 'serie_a', label: 'Serie A',  name: 'Serie A',         oddsKey: 'soccer_italy_serie_a',       season: '2025', color: 'green',  flag: '🇮🇹' },
   { key: 'ligue_1', label: 'Ligue 1',  name: 'Ligue 1',         oddsKey: 'soccer_france_ligue_one',    season: '2025', color: 'indigo', flag: '🇫🇷' },
@@ -720,7 +720,7 @@ export default function BetsPage() {
       <div className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-6 lg:px-8">
 
         {/* Liga-Tabs */}
-        <div className="flex gap-1.5 sm:gap-2 mb-4 sm:mb-6 overflow-x-auto pb-1">
+        <div className="grid grid-cols-6 gap-1 sm:flex sm:gap-1.5 sm:gap-2 mb-4 sm:mb-6 sm:overflow-x-auto pb-1">
           {LEAGUES.map(league => {
             const isActive = activeLeague === league.key
             const colors = COUNTRY_COLORS[league.key]
@@ -733,7 +733,7 @@ export default function BetsPage() {
                   borderColor: isActive ? colors.border : '#d1d5db',
                   boxShadow: isActive ? `0 0 0 1px ${colors.border}` : undefined,
                 }}
-                className="relative px-3 sm:px-4 py-2 rounded-lg font-semibold text-[11px] sm:text-sm transition whitespace-nowrap flex-shrink-0 border text-slate-800 hover:opacity-90"
+                className="px-1 sm:px-4 py-2 rounded-lg font-semibold text-[10px] sm:text-sm transition whitespace-nowrap border text-slate-800 hover:opacity-90"
               >
                 {league.label}
               </button>

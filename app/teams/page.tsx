@@ -9,7 +9,7 @@ import Header from '@/components/Header'
 const LEAGUES = [
   { key: 'bl1',     label: '1. BL',   name: '1. Bundesliga',  color: 'blue'   },
   { key: 'bl2',     label: '2. BL',   name: '2. Bundesliga',  color: 'slate'  },
-  { key: 'epl',     label: 'EPL',     name: 'Premier League', color: 'purple' },
+  { key: 'epl',     label: 'PL',      name: 'Premier League', color: 'purple' },
   { key: 'la_liga', label: 'La Liga', name: 'La Liga',        color: 'red'    },
   { key: 'serie_a', label: 'Serie A', name: 'Serie A',        color: 'green'  },
   { key: 'ligue_1', label: 'Ligue 1', name: 'Ligue 1',        color: 'indigo' },
@@ -17,13 +17,14 @@ const LEAGUES = [
 
 type LeagueKey = typeof LEAGUES[number]['key']
 
-const TAB_ACTIVE: Record<string, string> = {
-  blue:   'bg-blue-600 text-white shadow-sm',
-  slate:  'bg-slate-700 text-white shadow-sm',
-  purple: 'bg-purple-600 text-white shadow-sm',
-  red:    'bg-red-600 text-white shadow-sm',
-  green:  'bg-green-600 text-white shadow-sm',
-  indigo: 'bg-indigo-600 text-white shadow-sm',
+// ─── Länderfarben für Tabs ─────────────────────────────────────────────────────
+const COUNTRY_COLORS: Record<string, { active: string; inactive: string; border: string }> = {
+  bl1:     { active: 'linear-gradient(135deg, #1a1a1a 33%, #CC0000 33%, #CC0000 66%, #FFCE00 66%)',     inactive: 'linear-gradient(135deg, rgba(26,26,26,0.08) 33%, rgba(204,0,0,0.08) 33%, rgba(204,0,0,0.08) 66%, rgba(255,206,0,0.08) 66%)',     border: '#CC0000' },
+  bl2:     { active: 'linear-gradient(135deg, #1a1a1a 33%, #CC0000 33%, #CC0000 66%, #FFCE00 66%)',     inactive: 'linear-gradient(135deg, rgba(26,26,26,0.08) 33%, rgba(204,0,0,0.08) 33%, rgba(204,0,0,0.08) 66%, rgba(255,206,0,0.08) 66%)',     border: '#CC0000' },
+  epl:     { active: 'linear-gradient(#CF101A, #CF101A) center/33% 100% no-repeat, linear-gradient(#CF101A, #CF101A) center/100% 33% no-repeat, #f5f5f5',  inactive: 'linear-gradient(rgba(207,16,26,0.25), rgba(207,16,26,0.25)) center/33% 100% no-repeat, linear-gradient(rgba(207,16,26,0.25), rgba(207,16,26,0.25)) center/100% 33% no-repeat, #f9f9f9', border: '#CF101A' },
+  la_liga: { active: 'linear-gradient(135deg, #AA151B 25%, #F1BF00 25%, #F1BF00 75%, #AA151B 75%)',    inactive: 'linear-gradient(135deg, rgba(170,21,27,0.1) 25%, rgba(241,191,0,0.1) 25%, rgba(241,191,0,0.1) 75%, rgba(170,21,27,0.1) 75%)',    border: '#AA151B' },
+  serie_a: { active: 'linear-gradient(135deg, #009246 33%, #f5f5f5 33%, #f5f5f5 66%, #CE2B37 66%)',    inactive: 'linear-gradient(135deg, rgba(0,146,70,0.1) 33%, rgba(245,245,245,0.3) 33%, rgba(245,245,245,0.3) 66%, rgba(206,43,55,0.1) 66%)', border: '#009246' },
+  ligue_1: { active: 'linear-gradient(135deg, #002395 33%, #f5f5f5 33%, #f5f5f5 66%, #ED2939 66%)',    inactive: 'linear-gradient(135deg, rgba(0,35,149,0.1) 33%, rgba(245,245,245,0.3) 33%, rgba(245,245,245,0.3) 66%, rgba(237,41,57,0.1) 66%)', border: '#002395' },
 }
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
@@ -56,17 +57,17 @@ const TeamRow = memo(({
 
   return (
     <tr className="hover:bg-slate-50 transition">
-      <td className="px-4 py-3 text-sm font-medium text-slate-800 whitespace-nowrap">
+      <td className="px-2 sm:px-4 py-1.5 sm:py-3 text-xs sm:text-sm font-medium text-slate-800 whitespace-nowrap">
         {team.short_name}
       </td>
-      <td className="px-4 py-3 text-sm text-center font-semibold text-green-700">
+      <td className="px-2 sm:px-4 py-1.5 sm:py-3 text-xs sm:text-sm text-center font-semibold text-green-700">
         {drawCount}
       </td>
-      <td className="px-4 py-3 text-sm text-center text-slate-600">
+      <td className="px-2 sm:px-4 py-1.5 sm:py-3 text-xs sm:text-sm text-center text-slate-600">
         {drawPercentage.toFixed(1)}%
       </td>
-      <td className="px-4 py-3">
-        <div className="flex items-center gap-2">
+      <td className="px-2 sm:px-4 py-1.5 sm:py-3">
+        <div className="flex items-center gap-1 sm:gap-2">
           <input
             type="text"
             inputMode="numeric"
@@ -80,9 +81,9 @@ const TeamRow = memo(({
                 }
               }
             }}
-            className="w-16 px-2 py-1 text-sm text-slate-900 font-medium border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-center"
+            className="w-12 sm:w-16 px-1 sm:px-2 py-0.5 sm:py-1 text-xs sm:text-sm text-slate-900 font-medium border border-slate-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-center"
           />
-          <span className="text-xs text-slate-500">Spiele</span>
+          <span className="text-[10px] sm:text-xs text-slate-500 hidden sm:inline">Spiele</span>
         </div>
       </td>
     </tr>
@@ -272,7 +273,7 @@ export default function TeamsPage() {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
       <Header />
 
-      <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
+      <div className="max-w-7xl mx-auto px-2 sm:px-4 py-4 sm:py-6 lg:px-8">
 
         {/* Header */}
         <div className="flex flex-col gap-4 mb-6">
@@ -280,20 +281,25 @@ export default function TeamsPage() {
             <h1 className="text-2xl font-bold text-slate-800">Teams Übersicht</h1>
 
             {/* Liga-Tabs */}
-            <div className="flex gap-1.5 sm:gap-2 overflow-x-auto pb-1">
-              {LEAGUES.map(league => (
-                <button
-                  key={league.key}
-                  onClick={() => setActiveLeague(league.key)}
-                  className={`px-3 sm:px-4 py-2 rounded-lg font-semibold text-[11px] sm:text-sm transition whitespace-nowrap flex-shrink-0 ${
-                    activeLeague === league.key
-                      ? TAB_ACTIVE[league.color]
-                      : 'bg-white text-slate-600 border border-slate-300 hover:bg-slate-50'
-                  }`}
-                >
-                  {league.label}
-                </button>
-              ))}
+            <div className="grid grid-cols-6 gap-1 sm:flex sm:gap-2 w-full sm:w-auto">
+              {LEAGUES.map(league => {
+                const isActive = activeLeague === league.key
+                const colors = COUNTRY_COLORS[league.key]
+                return (
+                  <button
+                    key={league.key}
+                    onClick={() => setActiveLeague(league.key)}
+                    style={{
+                      background: isActive ? colors.active : colors.inactive,
+                      borderColor: isActive ? colors.border : '#d1d5db',
+                      boxShadow: isActive ? `0 0 0 1px ${colors.border}` : undefined,
+                    }}
+                    className="px-1 sm:px-4 py-2 rounded-lg font-semibold text-[10px] sm:text-sm transition whitespace-nowrap border text-slate-800 hover:opacity-90"
+                  >
+                    {league.label}
+                  </button>
+                )
+              })}
             </div>
           </div>
 
@@ -396,10 +402,10 @@ export default function TeamsPage() {
             <table className="min-w-full divide-y divide-slate-200 bg-white">
               <thead className="bg-slate-50">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">Team</th>
-                  <th className="px-4 py-3 text-center text-xs font-semibold text-slate-700">Anzahl X</th>
-                  <th className="px-4 py-3 text-center text-xs font-semibold text-slate-700">% X</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">Warten nach X</th>
+                  <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs font-semibold text-slate-700">Team</th>
+                  <th className="px-2 sm:px-4 py-2 sm:py-3 text-center text-xs font-semibold text-slate-700">Anz. X</th>
+                  <th className="px-2 sm:px-4 py-2 sm:py-3 text-center text-xs font-semibold text-slate-700">% X</th>
+                  <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs font-semibold text-slate-700">Warten</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-slate-200">
