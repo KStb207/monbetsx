@@ -5,6 +5,28 @@ import { useEffect, useState, useCallback, memo } from 'react'
 import { supabase } from '@/lib/supabase'
 import Header from '@/components/Header'
 
+// ─── Liga-Konfiguration ────────────────────────────────────────────────────────
+const LEAGUES = [
+  { key: 'bl1',     label: '1. BL',   name: '1. Bundesliga',  color: 'blue'   },
+  { key: 'bl2',     label: '2. BL',   name: '2. Bundesliga',  color: 'slate'  },
+  { key: 'epl',     label: 'EPL',     name: 'Premier League', color: 'purple' },
+  { key: 'la_liga', label: 'La Liga', name: 'La Liga',        color: 'red'    },
+  { key: 'serie_a', label: 'Serie A', name: 'Serie A',        color: 'green'  },
+  { key: 'ligue_1', label: 'Ligue 1', name: 'Ligue 1',        color: 'indigo' },
+] as const
+
+type LeagueKey = typeof LEAGUES[number]['key']
+
+const TAB_ACTIVE: Record<string, string> = {
+  blue:   'bg-blue-600 text-white shadow-sm',
+  slate:  'bg-slate-700 text-white shadow-sm',
+  purple: 'bg-purple-600 text-white shadow-sm',
+  red:    'bg-red-600 text-white shadow-sm',
+  green:  'bg-green-600 text-white shadow-sm',
+  indigo: 'bg-indigo-600 text-white shadow-sm',
+}
+
+// ─── Interfaces ───────────────────────────────────────────────────────────────
 interface Team {
   id: number
   name: string
@@ -20,12 +42,12 @@ interface TeamStats {
   drawPercentage: number
 }
 
-// Memoized TeamRow Component
-const TeamRow = memo(({ 
-  teamStats, 
-  inputValue, 
-  onInputChange 
-}: { 
+// ─── Memoized TeamRow ─────────────────────────────────────────────────────────
+const TeamRow = memo(({
+  teamStats,
+  inputValue,
+  onInputChange
+}: {
   teamStats: TeamStats
   inputValue: string
   onInputChange: (teamId: number, value: string) => void
@@ -69,155 +91,115 @@ const TeamRow = memo(({
 
 TeamRow.displayName = 'TeamRow'
 
+// ─── Hauptkomponente ──────────────────────────────────────────────────────────
 export default function TeamsPage() {
-  const [bl1Teams, setBl1Teams] = useState<TeamStats[]>([])
-  const [bl2Teams, setBl2Teams] = useState<TeamStats[]>([])
+  const [activeLeague, setActiveLeague] = useState<LeagueKey>('bl1')
+  const [teamStats, setTeamStats] = useState<TeamStats[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [calculating, setCalculating] = useState(false)
   const [recalculating, setRecalculating] = useState(false)
-  
-  const [showBl1, setShowBl1] = useState(true)
-  const [showBl2, setShowBl2] = useState(true)
 
   const [inputValues, setInputValues] = useState<Record<number, string>>({})
   const [originalValues, setOriginalValues] = useState<Record<number, number>>({})
 
+  const leagueConfig = LEAGUES.find(l => l.key === activeLeague)!
+
+  // ─── Daten laden wenn Liga wechselt ──────────────────────────────────────────
   useEffect(() => {
-  async function fetchTeamsData() {
+    setTeamStats([])
     setLoading(true)
-    
-    try {
-      // 1. Hole alle Teams - sortiert nach short_name
-      const { data: teams } = await supabase
-        .from('teams')
-        .select('*')
-        .order('short_name', { ascending: true })  // ✅ Geändert von 'name' zu 'short_name'
 
-      if (!teams) return
+    async function fetchTeamsData() {
+      try {
+        const { data: teams } = await supabase
+          .from('teams')
+          .select('*')
+          .eq('league_shortcut', activeLeague)
+          .order('short_name', { ascending: true })
 
-      // 2. Hole alle Matches mit Ergebnissen
-      const { data: matches } = await supabase
-        .from('matches')
-        .select('*')
-        .eq('season', '2025')
-        .eq('is_finished', true)
+        if (!teams) return
 
-      // 3. Berechne Statistiken für jedes Team
-      const calculateTeamStats = (team: Team): TeamStats => {
-        const teamMatches = matches?.filter(m => 
-          m.home_team_id === team.id || m.away_team_id === team.id
-        ) || []
+        const { data: matches } = await supabase
+          .from('matches')
+          .select('*')
+          .eq('league_shortcut', activeLeague)
+          .eq('season', '2025')
+          .eq('is_finished', true)
 
-        const drawCount = teamMatches.filter(m => m.result === 'x').length
-        const totalMatches = teamMatches.length
-        const drawPercentage = totalMatches > 0 ? (drawCount / totalMatches) * 100 : 0
-
-        return {
-          team,
-          totalMatches,
-          drawCount,
-          drawPercentage
+        const calculateStats = (team: Team): TeamStats => {
+          const teamMatches = matches?.filter(m =>
+            m.home_team_id === team.id || m.away_team_id === team.id
+          ) || []
+          const drawCount = teamMatches.filter(m => m.result === 'x').length
+          const totalMatches = teamMatches.length
+          return { team, totalMatches, drawCount, drawPercentage: totalMatches > 0 ? (drawCount / totalMatches) * 100 : 0 }
         }
+
+        setTeamStats(teams.map(calculateStats))
+
+        const inputs: Record<number, string> = {}
+        const originals: Record<number, number> = {}
+        teams.forEach(t => {
+          inputs[t.id] = t.games_to_wait_after_draw.toString()
+          originals[t.id] = t.games_to_wait_after_draw
+        })
+        setInputValues(inputs)
+        setOriginalValues(originals)
+      } catch (error) {
+        console.error('Fehler beim Laden:', error)
+      } finally {
+        setLoading(false)
       }
-
-      // 4. Verarbeite Teams nach Liga (bereits sortiert durch Query)
-      const bl1 = teams
-        .filter(t => t.league_shortcut === 'bl1')
-        .map(calculateTeamStats)
-      
-      const bl2 = teams
-        .filter(t => t.league_shortcut === 'bl2')
-        .map(calculateTeamStats)
-
-      setBl1Teams(bl1)
-      setBl2Teams(bl2)
-
-      // 5. Initialisiere Input- und Original-Werte
-      const inputs: Record<number, string> = {}
-      const originals: Record<number, number> = {}
-      
-      teams.forEach(t => {
-        inputs[t.id] = t.games_to_wait_after_draw.toString()
-        originals[t.id] = t.games_to_wait_after_draw
-      })
-      
-      setInputValues(inputs)
-      setOriginalValues(originals)
-    } catch (error) {
-      console.error('Fehler beim Laden:', error)
-    } finally {
-      setLoading(false)
     }
-  }
 
-  fetchTeamsData()
-}, [])
+    fetchTeamsData()
+  }, [activeLeague])
 
+  // ─── Hilfsfunktionen ──────────────────────────────────────────────────────────
   const hasChanges = Object.keys(inputValues).some(teamIdStr => {
     const teamId = parseInt(teamIdStr)
     const currentValue = parseInt(inputValues[teamId] || '0')
-    const originalValue = originalValues[teamId]
-    return !isNaN(currentValue) && currentValue !== originalValue
+    return !isNaN(currentValue) && currentValue !== originalValues[teamId]
   })
 
   const handleInputChange = useCallback((teamId: number, value: string) => {
-    setInputValues(prev => ({
-      ...prev,
-      [teamId]: value
-    }))
+    setInputValues(prev => ({ ...prev, [teamId]: value }))
   }, [])
 
+  // ─── Speichern ────────────────────────────────────────────────────────────────
   const handleSaveAll = async () => {
     setSaving(true)
-
     try {
       const updates: Array<{ id: number; value: number }> = []
-      
+
       Object.keys(inputValues).forEach(teamIdStr => {
         const teamId = parseInt(teamIdStr)
         const currentValue = parseInt(inputValues[teamId] || '0')
-        const originalValue = originalValues[teamId]
-        
-        if (!isNaN(currentValue) && currentValue >= 0 && currentValue <= 34 && currentValue !== originalValue) {
+        if (!isNaN(currentValue) && currentValue >= 0 && currentValue <= 34 && currentValue !== originalValues[teamId]) {
           updates.push({ id: teamId, value: currentValue })
         }
       })
 
-      if (updates.length === 0) {
-        alert('Keine gültigen Änderungen zum Speichern')
-        return
-      }
+      if (updates.length === 0) { alert('Keine gültigen Änderungen zum Speichern'); return }
 
       for (const update of updates) {
         const { error } = await supabase
           .from('teams')
           .update({ games_to_wait_after_draw: update.value })
           .eq('id', update.id)
-
         if (error) throw error
       }
 
       const newOriginals = { ...originalValues }
-      updates.forEach(u => {
-        newOriginals[u.id] = u.value
-      })
+      updates.forEach(u => { newOriginals[u.id] = u.value })
       setOriginalValues(newOriginals)
 
-      const updateTeamValue = (team: Team) => ({
-        ...team,
-        games_to_wait_after_draw: parseInt(inputValues[team.id] || '0')
-      })
-
-      setBl1Teams(prev => prev.map(ts => ({
-        ...ts,
-        team: updateTeamValue(ts.team)
-      })))
-
-      setBl2Teams(prev => prev.map(ts => ({
-        ...ts,
-        team: updateTeamValue(ts.team)
-      })))
+      setTeamStats(prev => prev.map(ts => {
+        const update = updates.find(u => u.id === ts.team.id)
+        if (!update) return ts
+        return { ...ts, team: { ...ts.team, games_to_wait_after_draw: update.value } }
+      }))
 
       alert(`${updates.length} Team(s) erfolgreich gespeichert!`)
     } catch (error) {
@@ -228,13 +210,14 @@ export default function TeamsPage() {
     }
   }
 
+  // ─── Stakes berechnen ─────────────────────────────────────────────────────────
   const handleCalculateStakes = async () => {
     setCalculating(true)
-
     try {
       const { data: lastFinishedMatch } = await supabase
         .from('matches')
         .select('matchday')
+        .eq('league_shortcut', activeLeague)
         .eq('season', '2025')
         .eq('is_finished', true)
         .order('matchday', { ascending: false })
@@ -247,23 +230,15 @@ export default function TeamsPage() {
 
       const lastMatchday = lastFinishedMatch[0].matchday
 
-      const { error: bl1Error } = await supabase.rpc('calculate_stakes_after_matchday', {
+      const { error } = await supabase.rpc('calculate_stakes_after_matchday', {
         p_matchday: lastMatchday,
-        p_league_shortcut: 'bl1',
+        p_league_shortcut: activeLeague,
         p_season: '2025'
       })
 
-      if (bl1Error) throw bl1Error
+      if (error) throw error
 
-      const { error: bl2Error } = await supabase.rpc('calculate_stakes_after_matchday', {
-        p_matchday: lastMatchday,
-        p_league_shortcut: 'bl2',
-        p_season: '2025'
-      })
-
-      if (bl2Error) throw bl2Error
-
-      alert(`Einsätze für Spieltag ${lastMatchday + 1} erfolgreich berechnet!`)
+      alert(`Einsätze für Spieltag ${lastMatchday + 1} (${leagueConfig.name}) erfolgreich berechnet!`)
     } catch (error) {
       console.error('Fehler beim Berechnen:', error)
       alert('Fehler beim Berechnen der Einsätze')
@@ -272,26 +247,18 @@ export default function TeamsPage() {
     }
   }
 
+  // ─── Rückwirkend berechnen ────────────────────────────────────────────────────
   const handleRecalculateStakes = async () => {
     setRecalculating(true)
-
     try {
-      const { data: bl1Data, error: bl1Error } = await supabase.rpc('recalculate_all_stakes_from_last_draw', {
-        p_league_shortcut: 'bl1',
+      const { data, error } = await supabase.rpc('recalculate_all_stakes_from_last_draw', {
+        p_league_shortcut: activeLeague,
         p_season: '2025'
       })
 
-      if (bl1Error) throw bl1Error
+      if (error) throw error
 
-      const { data: bl2Data, error: bl2Error } = await supabase.rpc('recalculate_all_stakes_from_last_draw', {
-        p_league_shortcut: 'bl2',
-        p_season: '2025'
-      })
-
-      if (bl2Error) throw bl2Error
-
-      const totalUpdates = (bl1Data?.length || 0) + (bl2Data?.length || 0)
-      alert(`${totalUpdates} Einsätze rückwirkend neu berechnet!`)
+      alert(`${data?.length || 0} Einsätze (${leagueConfig.name}) rückwirkend neu berechnet!`)
     } catch (error) {
       console.error('Fehler beim rückwirkenden Berechnen:', error)
       alert('Fehler beim rückwirkenden Berechnen der Einsätze')
@@ -300,47 +267,44 @@ export default function TeamsPage() {
     }
   }
 
+  // ─── Render ───────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
       <Header />
-      
-      <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
-        <div className="flex flex-col gap-4 mb-6">
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold text-slate-800">Teams Übersicht</h1>
-            
-            <div className="flex gap-2">
-              <button
-                onClick={() => setShowBl1(!showBl1)}
-                className={`px-4 py-2 rounded-lg font-semibold text-sm transition ${
-                  showBl1
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'bg-white text-slate-600 border border-slate-300 hover:bg-slate-50'
-                }`}
-              >
-                1. BL
-              </button>
 
-              <button
-                onClick={() => setShowBl2(!showBl2)}
-                className={`px-4 py-2 rounded-lg font-semibold text-sm transition ${
-                  showBl2
-                    ? 'bg-slate-700 text-white shadow-sm'
-                    : 'bg-white text-slate-600 border border-slate-300 hover:bg-slate-50'
-                }`}
-              >
-                2. BL
-              </button>
+      <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
+
+        {/* Header */}
+        <div className="flex flex-col gap-4 mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <h1 className="text-2xl font-bold text-slate-800">Teams Übersicht</h1>
+
+            {/* Liga-Tabs */}
+            <div className="flex gap-1.5 sm:gap-2 overflow-x-auto pb-1">
+              {LEAGUES.map(league => (
+                <button
+                  key={league.key}
+                  onClick={() => setActiveLeague(league.key)}
+                  className={`px-3 sm:px-4 py-2 rounded-lg font-semibold text-[11px] sm:text-sm transition whitespace-nowrap flex-shrink-0 ${
+                    activeLeague === league.key
+                      ? TAB_ACTIVE[league.color]
+                      : 'bg-white text-slate-600 border border-slate-300 hover:bg-slate-50'
+                  }`}
+                >
+                  {league.label}
+                </button>
+              ))}
             </div>
           </div>
 
+          {/* Action Buttons */}
           <div className="flex gap-1.5 flex-wrap">
             <button
               onClick={handleSaveAll}
               disabled={saving || !hasChanges}
               className={`px-2 py-1.5 sm:px-3 sm:py-2 rounded-lg transition-all duration-200 font-semibold shadow-lg flex items-center gap-1 sm:gap-2 text-[10px] sm:text-xs ${
-                hasChanges 
-                  ? 'bg-green-600 hover:bg-green-700 text-white' 
+                hasChanges
+                  ? 'bg-green-600 hover:bg-green-700 text-white'
                   : 'bg-slate-300 text-slate-500 cursor-not-allowed'
               }`}
             >
@@ -363,9 +327,7 @@ export default function TeamsPage() {
               onClick={handleCalculateStakes}
               disabled={calculating}
               className={`px-2 py-1.5 sm:px-3 sm:py-2 rounded-lg transition-all duration-200 font-semibold shadow-lg flex items-center gap-1 sm:gap-2 text-[10px] sm:text-xs ${
-                calculating
-                  ? 'bg-blue-400 cursor-wait text-white'
-                  : 'bg-blue-600 hover:bg-blue-700 text-white'
+                calculating ? 'bg-blue-400 cursor-wait text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'
               }`}
             >
               {calculating ? (
@@ -387,9 +349,7 @@ export default function TeamsPage() {
               onClick={handleRecalculateStakes}
               disabled={recalculating}
               className={`px-2 py-1.5 sm:px-3 sm:py-2 rounded-lg transition-all duration-200 font-semibold shadow-lg flex items-center gap-1 sm:gap-2 text-[10px] sm:text-xs ${
-                recalculating
-                  ? 'bg-purple-400 cursor-wait text-white'
-                  : 'bg-purple-600 hover:bg-purple-700 text-white'
+                recalculating ? 'bg-purple-400 cursor-wait text-white' : 'bg-purple-600 hover:bg-purple-700 text-white'
               }`}
             >
               {recalculating ? (
@@ -409,99 +369,55 @@ export default function TeamsPage() {
           </div>
         </div>
 
+        {/* Liga-Name + Team-Count */}
+        <div className="flex items-center gap-3 mb-4">
+          <h2 className="text-xl font-bold text-slate-800">{leagueConfig.name}</h2>
+          {!loading && (
+            <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+              activeLeague === 'bl1'     ? 'bg-blue-100 text-blue-700'     :
+              activeLeague === 'bl2'     ? 'bg-slate-100 text-slate-700'   :
+              activeLeague === 'epl'     ? 'bg-purple-100 text-purple-700' :
+              activeLeague === 'la_liga' ? 'bg-red-100 text-red-700'       :
+              activeLeague === 'serie_a' ? 'bg-green-100 text-green-700'   :
+              'bg-indigo-100 text-indigo-700'
+            }`}>
+              {teamStats.length} Teams
+            </span>
+          )}
+        </div>
+
         {loading ? (
           <div className="text-center py-12">
             <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
             <p className="mt-2 text-slate-600">Lade Teams...</p>
           </div>
+        ) : teamStats.length > 0 ? (
+          <div className="overflow-x-auto shadow-sm rounded-lg border border-slate-200">
+            <table className="min-w-full divide-y divide-slate-200 bg-white">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">Team</th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-slate-700">Anzahl X</th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-slate-700">% X</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">Warten nach X</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-slate-200">
+                {teamStats.map(ts => (
+                  <TeamRow
+                    key={ts.team.id}
+                    teamStats={ts}
+                    inputValue={inputValues[ts.team.id] || ''}
+                    onInputChange={handleInputChange}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : (
-          <>
-            {showBl1 && (
-              <div className="mb-8">
-                <div className="flex items-center gap-3 mb-4">
-                  <h2 className="text-xl font-bold text-slate-800">1. Bundesliga</h2>
-                  <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-semibold">
-                    {bl1Teams.length} Teams
-                  </span>
-                </div>
-                
-                {bl1Teams.length > 0 ? (
-                  <div className="overflow-x-auto shadow-sm rounded-lg border border-slate-200">
-                    <table className="min-w-full divide-y divide-slate-200 bg-white">
-                      <thead className="bg-slate-50">
-                        <tr>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">Team</th>
-                          <th className="px-4 py-3 text-center text-xs font-semibold text-slate-700">Anzahl X</th>
-                          <th className="px-4 py-3 text-center text-xs font-semibold text-slate-700">% X</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">Warten nach X</th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-slate-200">
-                        {bl1Teams.map(ts => (
-                          <TeamRow 
-                            key={ts.team.id} 
-                            teamStats={ts} 
-                            inputValue={inputValues[ts.team.id] || ''}
-                            onInputChange={handleInputChange}
-                          />
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-8 text-center">
-                    <p className="text-slate-500">Keine Teams gefunden</p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {showBl2 && (
-              <div>
-                <div className="flex items-center gap-3 mb-4">
-                  <h2 className="text-xl font-bold text-slate-800">2. Bundesliga</h2>
-                  <span className="px-3 py-1 bg-slate-100 text-slate-700 rounded-full text-xs font-semibold">
-                    {bl2Teams.length} Teams
-                  </span>
-                </div>
-                
-                {bl2Teams.length > 0 ? (
-                  <div className="overflow-x-auto shadow-sm rounded-lg border border-slate-200">
-                    <table className="min-w-full divide-y divide-slate-200 bg-white">
-                      <thead className="bg-slate-50">
-                        <tr>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">Team</th>
-                          <th className="px-4 py-3 text-center text-xs font-semibold text-slate-700">Anzahl X</th>
-                          <th className="px-4 py-3 text-center text-xs font-semibold text-slate-700">% X</th>
-                          <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700">Warten nach X</th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-slate-200">
-                        {bl2Teams.map(ts => (
-                          <TeamRow 
-                            key={ts.team.id} 
-                            teamStats={ts}
-                            inputValue={inputValues[ts.team.id] || ''}
-                            onInputChange={handleInputChange}
-                          />
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-8 text-center">
-                    <p className="text-slate-500">Keine Teams gefunden</p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {!showBl1 && !showBl2 && (
-              <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-12 text-center">
-                <p className="text-slate-500">Bitte mindestens eine Liga auswählen</p>
-              </div>
-            )}
-          </>
+          <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-8 text-center">
+            <p className="text-slate-500">Keine Teams gefunden</p>
+          </div>
         )}
       </div>
     </div>

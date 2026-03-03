@@ -169,12 +169,6 @@ export default function BetsPage() {
 
       setMatches(enriched)
 
-      // Client-seitige Odds als Fallback (falls odds_x noch nicht in DB)
-      const missingOdds = enriched.filter(m => !m.odds_x)
-      if (missingOdds.length > 0) {
-        fetchOddsFromAPI(missingOdds, leagueConfig.oddsKey)
-      }
-
       setLoading(false)
     }
 
