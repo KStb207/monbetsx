@@ -6,24 +6,24 @@ import Header from '@/components/Header'
 
 // ─── Liga-Konfiguration ────────────────────────────────────────────────────────
 const LEAGUES = [
-  { key: 'bl1',     label: '1. BL',    name: '1. Bundesliga',   oddsKey: 'soccer_germany_bundesliga',  season: '2025', color: 'blue' },
-  { key: 'bl2',     label: '2. BL',    name: '2. Bundesliga',   oddsKey: 'soccer_germany_bundesliga2', season: '2025', color: 'slate' },
-  { key: 'epl',     label: 'EPL',      name: 'Premier League',  oddsKey: 'soccer_epl',                 season: '2025', color: 'purple' },
-  { key: 'la_liga', label: 'La Liga',  name: 'La Liga',         oddsKey: 'soccer_spain_la_liga',       season: '2025', color: 'red' },
-  { key: 'serie_a', label: 'Serie A',  name: 'Serie A',         oddsKey: 'soccer_italy_serie_a',       season: '2025', color: 'green' },
-  { key: 'ligue_1', label: 'Ligue 1',  name: 'Ligue 1',         oddsKey: 'soccer_france_ligue_one',      season: '2025', color: 'indigo' },
+  { key: 'bl1',     label: '1. BL',    name: '1. Bundesliga',   oddsKey: 'soccer_germany_bundesliga',  season: '2025', color: 'blue',   flag: '🇩🇪' },
+  { key: 'bl2',     label: '2. BL',    name: '2. Bundesliga',   oddsKey: 'soccer_germany_bundesliga2', season: '2025', color: 'slate',  flag: '🇩🇪' },
+  { key: 'epl',     label: 'EPL',      name: 'Premier League',  oddsKey: 'soccer_epl',                 season: '2025', color: 'purple', flag: '🏴󠁧󠁢󠁥󠁮󠁧󠁿' },
+  { key: 'la_liga', label: 'La Liga',  name: 'La Liga',         oddsKey: 'soccer_spain_la_liga',       season: '2025', color: 'red',    flag: '🇪🇸' },
+  { key: 'serie_a', label: 'Serie A',  name: 'Serie A',         oddsKey: 'soccer_italy_serie_a',       season: '2025', color: 'green',  flag: '🇮🇹' },
+  { key: 'ligue_1', label: 'Ligue 1',  name: 'Ligue 1',         oddsKey: 'soccer_france_ligue_one',    season: '2025', color: 'indigo', flag: '🇫🇷' },
 ] as const
 
 type LeagueKey = typeof LEAGUES[number]['key']
 
-// ─── Tab-Farben ────────────────────────────────────────────────────────────────
-const TAB_ACTIVE: Record<string, string> = {
-  blue:   'bg-blue-600 text-white shadow-sm',
-  slate:  'bg-slate-700 text-white shadow-sm',
-  purple: 'bg-purple-600 text-white shadow-sm',
-  red:    'bg-red-600 text-white shadow-sm',
-  green:  'bg-green-600 text-white shadow-sm',
-  indigo: 'bg-indigo-600 text-white shadow-sm',
+// ─── Länderfarben für Tabs ─────────────────────────────────────────────────────
+const COUNTRY_COLORS: Record<string, { active: string; inactive: string; border: string }> = {
+  bl1:     { active: 'linear-gradient(135deg, #1a1a1a 33%, #CC0000 33%, #CC0000 66%, #FFCE00 66%)',     inactive: 'linear-gradient(135deg, rgba(26,26,26,0.08) 33%, rgba(204,0,0,0.08) 33%, rgba(204,0,0,0.08) 66%, rgba(255,206,0,0.08) 66%)',     border: '#CC0000' },
+  bl2:     { active: 'linear-gradient(135deg, #1a1a1a 33%, #CC0000 33%, #CC0000 66%, #FFCE00 66%)',     inactive: 'linear-gradient(135deg, rgba(26,26,26,0.08) 33%, rgba(204,0,0,0.08) 33%, rgba(204,0,0,0.08) 66%, rgba(255,206,0,0.08) 66%)',     border: '#CC0000' },
+  epl:     { active: 'linear-gradient(#CF101A, #CF101A) center/33% 100% no-repeat, linear-gradient(#CF101A, #CF101A) center/100% 33% no-repeat, #f5f5f5',  inactive: 'linear-gradient(rgba(207,16,26,0.25), rgba(207,16,26,0.25)) center/33% 100% no-repeat, linear-gradient(rgba(207,16,26,0.25), rgba(207,16,26,0.25)) center/100% 33% no-repeat, #f9f9f9', border: '#CF101A' },
+  la_liga: { active: 'linear-gradient(135deg, #AA151B 25%, #F1BF00 25%, #F1BF00 75%, #AA151B 75%)',    inactive: 'linear-gradient(135deg, rgba(170,21,27,0.1) 25%, rgba(241,191,0,0.1) 25%, rgba(241,191,0,0.1) 75%, rgba(170,21,27,0.1) 75%)',    border: '#AA151B' },
+  serie_a: { active: 'linear-gradient(135deg, #009246 33%, #f5f5f5 33%, #f5f5f5 66%, #CE2B37 66%)',    inactive: 'linear-gradient(135deg, rgba(0,146,70,0.1) 33%, rgba(245,245,245,0.3) 33%, rgba(245,245,245,0.3) 66%, rgba(206,43,55,0.1) 66%)', border: '#009246' },
+  ligue_1: { active: 'linear-gradient(135deg, #002395 33%, #f5f5f5 33%, #f5f5f5 66%, #ED2939 66%)',    inactive: 'linear-gradient(135deg, rgba(0,35,149,0.1) 33%, rgba(245,245,245,0.3) 33%, rgba(245,245,245,0.3) 66%, rgba(237,41,57,0.1) 66%)', border: '#002395' },
 }
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
@@ -43,12 +43,14 @@ interface Match {
     name: string
     short_name: string
     odds_api_id?: string
+    table_position?: number | null
   }
   away_team: {
     id: number
     name: string
     short_name: string
     odds_api_id?: string
+    table_position?: number | null
   }
   home_stake: number
   away_stake: number
@@ -86,6 +88,7 @@ export default function BetsPage() {
 
   const [apiOdds, setApiOdds] = useState<Map<number, ApiOdds>>(new Map())
   const [loadingApiOdds, setLoadingApiOdds] = useState(false)
+  const [nextActualMatchday, setNextActualMatchday] = useState<number | null>(null)
 
   const leagueConfig = LEAGUES.find(l => l.key === activeLeague)!
 
@@ -94,6 +97,7 @@ export default function BetsPage() {
     setSelectedMatchday(null)
     setMatches([])
     setApiOdds(new Map())
+    setNextActualMatchday(null)
 
     async function fetchMatchdays() {
       const { data } = await supabase
@@ -106,13 +110,37 @@ export default function BetsPage() {
         const uniqueMatchdays = [...new Set(data.map(m => m.matchday))].sort((a, b) => a - b)
         setAvailableMatchdays(uniqueMatchdays)
 
+        // Spiele nach Spieltag gruppieren
+        const matchdayGroups = new Map<number, { match_date: string; is_finished: boolean }[]>()
+        data.forEach(m => {
+          if (!matchdayGroups.has(m.matchday)) matchdayGroups.set(m.matchday, [])
+          matchdayGroups.get(m.matchday)!.push(m)
+        })
+
+        // Prüfen ob ein Spieltag Nachholspiele enthält (Zeitspanne > 4 Tage)
+        const hasNachholspiel = (games: { match_date: string }[]) => {
+          const dates = games.map(g => new Date(g.match_date).getTime())
+          const diffDays = (Math.max(...dates) - Math.min(...dates)) / (1000 * 60 * 60 * 24)
+          return diffDays > 4
+        }
+
         const now = new Date()
         const upcoming = data
           .filter(m => new Date(m.match_date) >= now && !m.is_finished)
           .sort((a, b) => new Date(a.match_date).getTime() - new Date(b.match_date).getTime())
 
         if (upcoming.length > 0) {
-          setSelectedMatchday(upcoming[0].matchday)
+          const firstUpcomingMatchday = upcoming[0].matchday
+          setSelectedMatchday(firstUpcomingMatchday)
+
+          // Nachholspiel-Erkennung: Gibt es einen späteren Spieltag mit kommenden Spielen?
+          if (hasNachholspiel(matchdayGroups.get(firstUpcomingMatchday) ?? [])) {
+            const later = uniqueMatchdays.find(md =>
+              md > firstUpcomingMatchday &&
+              (matchdayGroups.get(md) ?? []).some(g => new Date(g.match_date) >= now && !g.is_finished)
+            )
+            if (later) setNextActualMatchday(later)
+          }
         } else {
           setSelectedMatchday(uniqueMatchdays[uniqueMatchdays.length - 1] ?? null)
         }
@@ -132,8 +160,8 @@ export default function BetsPage() {
         .from('matches')
         .select(`
           *,
-          home_team:teams!matches_home_team_id_fkey(id, name, short_name, odds_api_id),
-          away_team:teams!matches_away_team_id_fkey(id, name, short_name, odds_api_id)
+          home_team:teams!matches_home_team_id_fkey(id, name, short_name, odds_api_id, table_position),
+          away_team:teams!matches_away_team_id_fkey(id, name, short_name, odds_api_id, table_position)
         `)
         .eq('matchday', selectedMatchday)
         .eq('league_shortcut', activeLeague)
@@ -409,12 +437,15 @@ export default function BetsPage() {
           {/* Teams */}
           <div className="space-y-1.5 sm:space-y-2 mb-2 sm:mb-3">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 <span className={`text-sm sm:text-base font-semibold ${homeTeamOver250 ? 'text-orange-600' : 'text-slate-800'}`}>
                   {match.home_team.short_name}
                 </span>
+                {match.home_team.table_position && (
+                  <span className="text-xs text-slate-400">{match.home_team.table_position}.</span>
+                )}
                 {(hasMatchStarted || match.is_finished) && match.home_goals !== null && (
-                  <span className="text-lg sm:text-xl font-bold text-slate-700">{match.home_goals}</span>
+                  <span className="text-lg sm:text-xl font-bold text-slate-700 ml-1">{match.home_goals}</span>
                 )}
               </div>
               <span className={`text-xs sm:text-sm font-bold ${homeTeamOver250 ? 'text-orange-600' : 'text-slate-600'}`}>
@@ -423,12 +454,15 @@ export default function BetsPage() {
             </div>
 
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 <span className={`text-sm sm:text-base font-semibold ${awayTeamOver250 ? 'text-orange-600' : 'text-slate-800'}`}>
                   {match.away_team.short_name}
                 </span>
+                {match.away_team.table_position && (
+                  <span className="text-xs text-slate-400">{match.away_team.table_position}.</span>
+                )}
                 {(hasMatchStarted || match.is_finished) && match.away_goals !== null && (
-                  <span className="text-lg sm:text-xl font-bold text-slate-700">{match.away_goals}</span>
+                  <span className="text-lg sm:text-xl font-bold text-slate-700 ml-1">{match.away_goals}</span>
                 )}
               </div>
               <span className={`text-xs sm:text-sm font-bold ${awayTeamOver250 ? 'text-orange-600' : 'text-slate-600'}`}>
@@ -687,19 +721,24 @@ export default function BetsPage() {
 
         {/* Liga-Tabs */}
         <div className="flex gap-1.5 sm:gap-2 mb-4 sm:mb-6 overflow-x-auto pb-1">
-          {LEAGUES.map(league => (
-            <button
-              key={league.key}
-              onClick={() => setActiveLeague(league.key)}
-              className={`px-3 sm:px-4 py-2 rounded-lg font-semibold text-[11px] sm:text-sm transition whitespace-nowrap flex-shrink-0 ${
-                activeLeague === league.key
-                  ? TAB_ACTIVE[league.color]
-                  : 'bg-white text-slate-600 border border-slate-300 hover:bg-slate-50'
-              }`}
-            >
-              {league.label}
-            </button>
-          ))}
+          {LEAGUES.map(league => {
+            const isActive = activeLeague === league.key
+            const colors = COUNTRY_COLORS[league.key]
+            return (
+              <button
+                key={league.key}
+                onClick={() => setActiveLeague(league.key)}
+                style={{
+                  background: isActive ? colors.active : colors.inactive,
+                  borderColor: isActive ? colors.border : '#d1d5db',
+                  boxShadow: isActive ? `0 0 0 1px ${colors.border}` : undefined,
+                }}
+                className="relative px-3 sm:px-4 py-2 rounded-lg font-semibold text-[11px] sm:text-sm transition whitespace-nowrap flex-shrink-0 border text-slate-800 hover:opacity-90"
+              >
+                {league.label}
+              </button>
+            )
+          })}
         </div>
 
         {/* Liga-Name + Spieltag-Navigation */}
@@ -754,6 +793,20 @@ export default function BetsPage() {
             </button>
           </div>
         </div>
+
+        {/* Nachholspiel-Hinweis */}
+        {nextActualMatchday && (
+          <div className="mb-3 sm:mb-4">
+            <button
+              onClick={() => { setSelectedMatchday(nextActualMatchday); setNextActualMatchday(null) }}
+              className="flex items-center gap-2 text-xs sm:text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 hover:bg-amber-100 transition"
+            >
+              <span>⚠️</span>
+              <span>Nachholspiel angezeigt – zum aktuellen Spieltag ({nextActualMatchday}. Spieltag)</span>
+              <span className="ml-auto">→</span>
+            </button>
+          </div>
+        )}
 
         {loading ? (
           <div className="text-center py-12">
