@@ -103,6 +103,7 @@ export default function BetsPage() {
     setMatches([])
     setApiOdds(new Map())
     setNextActualMatchday(null)
+    setExpandedMatches(new Set()) // Setze aufgeklappte Spiele zurück beim Liga-Wechsel
 
     async function fetchMatchdays() {
       const { data } = await supabase
@@ -488,20 +489,6 @@ export default function BetsPage() {
         ) : (
           // Normale Ansicht
           <div className="p-3 sm:p-4">
-            {canCollapse && isExpanded && (
-              <div className="mb-2 flex justify-end">
-                <button
-                  onClick={() => setExpandedMatches(prev => {
-                    const newSet = new Set(prev)
-                    newSet.delete(match.id)
-                    return newSet
-                  })}
-                  className="text-xs text-slate-400 hover:text-slate-600 transition"
-                >
-                  Einklappen ↑
-                </button>
-              </div>
-            )}
             {/* Header */}
             <div className="flex items-center justify-between mb-2 sm:mb-3 pb-2 border-b border-slate-100">
               <div className="text-xs text-slate-500">
@@ -513,11 +500,24 @@ export default function BetsPage() {
                   <span>{formatDate(match.match_date)}</span>
                 )}
               </div>
-              {match.is_finished && (
-                <div className="text-xs font-semibold text-slate-600">
+              <div className="text-xs font-semibold text-slate-600">
+                {match.is_finished ? (
                   <span className="px-2 py-1 bg-slate-100 rounded-full">Beendet</span>
-                </div>
-              )}
+                ) : canCollapse && isExpanded ? (
+                  <button
+                    onClick={() => {
+                      setExpandedMatches(prev => {
+                        const newSet = new Set(prev)
+                        newSet.delete(match.id)
+                        return newSet
+                      })
+                    }}
+                    className="text-slate-400 hover:text-slate-600 transition"
+                  >
+                    Einklappen ↑
+                  </button>
+                ) : null}
+              </div>
             </div>
 
           {/* Teams */}
