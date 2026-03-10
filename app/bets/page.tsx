@@ -390,6 +390,7 @@ export default function BetsPage() {
     const homeTeamOver250 = match.home_stake > 250
     const awayTeamOver250 = match.away_stake > 250
     const anyTeamOver250 = homeTeamOver250 || awayTeamOver250
+    const bothTeamsZeroStake = match.home_stake === 0 && match.away_stake === 0
 
     const currentOdds = parseFloat(oddsInput) || 3.40
     const calculatedAlternative = anyTeamOver250 && effectiveOddsX ? calculateAlternativeStake(match.total_stake, effectiveOddsX) : null
@@ -423,8 +424,17 @@ export default function BetsPage() {
     }
 
     return (
-      <div ref={cardRef} className="bg-white rounded-lg shadow-sm border border-slate-200 hover:shadow-md transition">
+      <div ref={cardRef} className={`bg-white rounded-lg shadow-sm border hover:shadow-md transition ${
+        bothTeamsZeroStake 
+          ? 'opacity-40 border-slate-100 bg-slate-50' 
+          : 'border-slate-200'
+      }`}>
         <div className="p-3 sm:p-4">
+          {bothTeamsZeroStake && (
+            <div className="mb-2 text-center">
+              <span className="text-[10px] sm:text-xs text-slate-400 italic">Wartezeit - Kein Einsatz</span>
+            </div>
+          )}
           {/* Header */}
           <div className="flex items-center justify-between mb-2 sm:mb-3 pb-2 border-b border-slate-100">
             <div className="text-xs text-slate-500">
