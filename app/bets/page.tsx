@@ -56,6 +56,8 @@ interface Match {
   away_stake: number
   home_real_stake: number
   away_real_stake: number
+  home_games_without_draw: number
+  away_games_without_draw: number
   total_stake: number
   odds: number | null
   odds_x: number | null
@@ -87,6 +89,7 @@ export default function BetsPage() {
   const [alternativeStakes, setAlternativeStakes] = useState<Map<number, AlternativeStake>>(new Map())
   const [showModal, setShowModal] = useState(false)
   const [modalMatchId, setModalMatchId] = useState<number | null>(null)
+  const [expandedMatches, setExpandedMatches] = useState<Set<number>>(new Set())
 
   const [apiOdds, setApiOdds] = useState<Map<number, ApiOdds>>(new Map())
   const [loadingApiOdds, setLoadingApiOdds] = useState(false)
@@ -169,6 +172,14 @@ export default function BetsPage() {
         .eq('league_shortcut', activeLeague)
         .order('match_date', { ascending: true })
 
+      // Lade ALLE Matches der Liga für games_without_draw Berechnung
+      const { data: allMatches } = await supabase
+        .from('matches')
+        .select('*')
+        .eq('league_shortcut', activeLeague)
+        .eq('season', leagueConfig.season)
+        .order('matchday', { ascending: true })
+
       const { data: stakes } = await supabase
         .from('team_stakes')
         .select('team_id, stake, real_stake')
@@ -182,8 +193,33 @@ export default function BetsPage() {
         .select('match_id, odds, total_stake')
         .in('match_id', matchIds)
 
-      const stakesMap = new Map(stakes?.map(s => [s.team_id, { stake: s.stake, real_stake: s.real_stake || 0 }]) || [])
+      const stakesMap = new Map(stakes?.map(s => [s.team_id, { 
+        stake: s.stake, 
+        real_stake: s.real_stake || 0
+      }]) || [])
       const betsMap = new Map(bets?.map(b => [b.match_id, { odds: b.odds, total_stake: b.total_stake }]) || [])
+
+      // Finde höchsten gespielten Spieltag
+      const maxPlayedMatchday = allMatches
+        ?.filter(m => m.is_finished)
+        .reduce((max, m) => Math.max(max, m.matchday), 0) || 0
+
+      // Berechne games_without_draw für jedes Team (wie auf Statistikseite)
+      const calculateGamesWithoutDraw = (teamId: number): number => {
+        let count = 0
+        // Gehe rückwärts vom höchsten gespielten Spieltag
+        for (let md = maxPlayedMatchday; md >= 1; md--) {
+          const match = allMatches?.find(m =>
+            m.matchday === md &&
+            m.is_finished === true &&
+            (m.home_team_id === teamId || m.away_team_id === teamId)
+          )
+          if (!match) continue
+          if (match.result === 'x') break  // Stoppe bei Unentschieden
+          count++
+        }
+        return count
+      }
 
       const enriched: Match[] = (matchData || []).map(match => {
         const betData = betsMap.get(match.id)
@@ -196,6 +232,8 @@ export default function BetsPage() {
           away_stake: awayStakeData.stake,
           home_real_stake: homeStakeData.real_stake,
           away_real_stake: awayStakeData.real_stake,
+          home_games_without_draw: calculateGamesWithoutDraw(match.home_team_id),
+          away_games_without_draw: calculateGamesWithoutDraw(match.away_team_id),
           total_stake: homeStakeData.stake + awayStakeData.stake,
           odds: betData?.odds || null,
           bet_total_stake: betData?.total_stake || null,
@@ -391,6 +429,9 @@ export default function BetsPage() {
     const awayTeamOver250 = match.away_stake > 250
     const anyTeamOver250 = homeTeamOver250 || awayTeamOver250
     const bothTeamsZeroStake = match.home_stake === 0 && match.away_stake === 0
+    const isExpanded = expandedMatches.has(match.id)
+    const canCollapse = bothTeamsZeroStake && !match.is_finished
+    const shouldShowCollapsed = canCollapse && !isExpanded
 
     const currentOdds = parseFloat(oddsInput) || 3.40
     const calculatedAlternative = anyTeamOver250 && effectiveOddsX ? calculateAlternativeStake(match.total_stake, effectiveOddsX) : null
@@ -425,35 +466,59 @@ export default function BetsPage() {
 
     return (
       <div ref={cardRef} className={`bg-white rounded-lg shadow-sm border hover:shadow-md transition ${
-        bothTeamsZeroStake 
-          ? 'opacity-40 border-slate-100 bg-slate-50' 
+        shouldShowCollapsed 
+          ? 'opacity-50 border-slate-100 bg-slate-50' 
           : 'border-slate-200'
       }`}>
-        <div className="p-3 sm:p-4">
-          {bothTeamsZeroStake && (
-            <div className="mb-2 text-center">
-              <span className="text-[10px] sm:text-xs text-slate-400 italic">Wartezeit - Kein Einsatz</span>
-            </div>
-          )}
-          {/* Header */}
-          <div className="flex items-center justify-between mb-2 sm:mb-3 pb-2 border-b border-slate-100">
-            <div className="text-xs text-slate-500">
-              {match.is_finished ? (
-                <>{formatDate(match.match_date)}</>
-              ) : hasMatchStarted ? (
-                <span className="px-2 py-1 bg-red-100 text-red-700 rounded-full font-semibold">Läuft</span>
-              ) : (
-                <span>{formatDate(match.match_date)}</span>
-              )}
-            </div>
-            <div className="text-xs font-semibold text-slate-600">
-              {match.is_finished ? (
-                <span className="px-2 py-1 bg-slate-100 rounded-full">Beendet</span>
-              ) : (
-                match.league_shortcut.toUpperCase()
-              )}
+        {shouldShowCollapsed ? (
+          // Eingeklappte Ansicht - Klick zum Ausklappen
+          <div 
+            className="p-2 sm:p-3 cursor-pointer hover:opacity-70"
+            onClick={() => setExpandedMatches(prev => new Set(prev).add(match.id))}
+          >
+            <div className="flex items-center justify-between text-xs sm:text-sm text-slate-600">
+              <span className="text-slate-500">{formatDate(match.match_date)}</span>
+              <span>
+                <span className="font-medium">{match.home_team.short_name}</span>
+                {' vs '}
+                <span className="font-medium">{match.away_team.short_name}</span>
+              </span>
             </div>
           </div>
+        ) : (
+          // Normale Ansicht
+          <div className="p-3 sm:p-4">
+            {canCollapse && isExpanded && (
+              <div className="mb-2 flex justify-end">
+                <button
+                  onClick={() => setExpandedMatches(prev => {
+                    const newSet = new Set(prev)
+                    newSet.delete(match.id)
+                    return newSet
+                  })}
+                  className="text-xs text-slate-400 hover:text-slate-600 transition"
+                >
+                  Einklappen ↑
+                </button>
+              </div>
+            )}
+            {/* Header */}
+            <div className="flex items-center justify-between mb-2 sm:mb-3 pb-2 border-b border-slate-100">
+              <div className="text-xs text-slate-500">
+                {match.is_finished ? (
+                  <>{formatDate(match.match_date)}</>
+                ) : hasMatchStarted ? (
+                  <span className="px-2 py-1 bg-red-100 text-red-700 rounded-full font-semibold">Läuft</span>
+                ) : (
+                  <span>{formatDate(match.match_date)}</span>
+                )}
+              </div>
+              {match.is_finished && (
+                <div className="text-xs font-semibold text-slate-600">
+                  <span className="px-2 py-1 bg-slate-100 rounded-full">Beendet</span>
+                </div>
+              )}
+            </div>
 
           {/* Teams */}
           <div className="space-y-1.5 sm:space-y-2 mb-2 sm:mb-3">
@@ -462,11 +527,14 @@ export default function BetsPage() {
                 <span className={`text-sm sm:text-base font-semibold ${homeTeamOver250 ? 'text-orange-600' : 'text-slate-800'}`}>
                   {match.home_team.short_name}
                 </span>
+                {(hasMatchStarted || match.is_finished) && match.home_goals !== null && (
+                  <span className="text-lg sm:text-xl font-bold text-slate-700 ml-1">{match.home_goals}</span>
+                )}
                 {match.home_team.table_position && (
                   <span className="text-xs text-slate-400">{match.home_team.table_position}.</span>
                 )}
-                {(hasMatchStarted || match.is_finished) && match.home_goals !== null && (
-                  <span className="text-lg sm:text-xl font-bold text-slate-700 ml-1">{match.home_goals}</span>
+                {!match.is_finished && match.home_games_without_draw > 0 && (
+                  <span className="text-[10px] sm:text-xs text-slate-400">- {match.home_games_without_draw} Spiele ohne x</span>
                 )}
               </div>
               <span className={`text-xs sm:text-sm font-bold ${homeTeamOver250 ? 'text-orange-600' : 'text-slate-600'}`}>
@@ -486,11 +554,14 @@ export default function BetsPage() {
                 <span className={`text-sm sm:text-base font-semibold ${awayTeamOver250 ? 'text-orange-600' : 'text-slate-800'}`}>
                   {match.away_team.short_name}
                 </span>
+                {(hasMatchStarted || match.is_finished) && match.away_goals !== null && (
+                  <span className="text-lg sm:text-xl font-bold text-slate-700 ml-1">{match.away_goals}</span>
+                )}
                 {match.away_team.table_position && (
                   <span className="text-xs text-slate-400">{match.away_team.table_position}.</span>
                 )}
-                {(hasMatchStarted || match.is_finished) && match.away_goals !== null && (
-                  <span className="text-lg sm:text-xl font-bold text-slate-700 ml-1">{match.away_goals}</span>
+                {!match.is_finished && match.away_games_without_draw > 0 && (
+                  <span className="text-[10px] sm:text-xs text-slate-400">- {match.away_games_without_draw} Spiele ohne x</span>
                 )}
               </div>
               <span className={`text-xs sm:text-sm font-bold ${awayTeamOver250 ? 'text-orange-600' : 'text-slate-600'}`}>
@@ -630,7 +701,8 @@ export default function BetsPage() {
               </div>
             </div>
           )}
-        </div>
+          </div>
+        )}
       </div>
     )
   }
