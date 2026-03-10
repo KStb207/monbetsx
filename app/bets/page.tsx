@@ -54,6 +54,8 @@ interface Match {
   }
   home_stake: number
   away_stake: number
+  home_real_stake: number
+  away_real_stake: number
   total_stake: number
   odds: number | null
   odds_x: number | null
@@ -169,7 +171,7 @@ export default function BetsPage() {
 
       const { data: stakes } = await supabase
         .from('team_stakes')
-        .select('team_id, stake')
+        .select('team_id, stake, real_stake')
         .eq('matchday', selectedMatchday)
         .eq('season', leagueConfig.season)
 
@@ -180,16 +182,21 @@ export default function BetsPage() {
         .select('match_id, odds, total_stake')
         .in('match_id', matchIds)
 
-      const stakesMap = new Map(stakes?.map(s => [s.team_id, s.stake]) || [])
+      const stakesMap = new Map(stakes?.map(s => [s.team_id, { stake: s.stake, real_stake: s.real_stake || 0 }]) || [])
       const betsMap = new Map(bets?.map(b => [b.match_id, { odds: b.odds, total_stake: b.total_stake }]) || [])
 
       const enriched: Match[] = (matchData || []).map(match => {
         const betData = betsMap.get(match.id)
+        const homeStakeData = stakesMap.get(match.home_team_id) || { stake: 0, real_stake: 0 }
+        const awayStakeData = stakesMap.get(match.away_team_id) || { stake: 0, real_stake: 0 }
+        
         return {
           ...match,
-          home_stake: stakesMap.get(match.home_team_id) || 0,
-          away_stake: stakesMap.get(match.away_team_id) || 0,
-          total_stake: (stakesMap.get(match.home_team_id) || 0) + (stakesMap.get(match.away_team_id) || 0),
+          home_stake: homeStakeData.stake,
+          away_stake: awayStakeData.stake,
+          home_real_stake: homeStakeData.real_stake,
+          away_real_stake: awayStakeData.real_stake,
+          total_stake: homeStakeData.stake + awayStakeData.stake,
           odds: betData?.odds || null,
           bet_total_stake: betData?.total_stake || null,
         }
@@ -422,7 +429,7 @@ export default function BetsPage() {
           <div className="flex items-center justify-between mb-2 sm:mb-3 pb-2 border-b border-slate-100">
             <div className="text-xs text-slate-500">
               {match.is_finished ? (
-                <span className="px-2 py-1 bg-slate-100 rounded-full">Beendet</span>
+                <>{formatDate(match.match_date)}</>
               ) : hasMatchStarted ? (
                 <span className="px-2 py-1 bg-red-100 text-red-700 rounded-full font-semibold">Läuft</span>
               ) : (
@@ -430,7 +437,11 @@ export default function BetsPage() {
               )}
             </div>
             <div className="text-xs font-semibold text-slate-600">
-              {match.league_shortcut.toUpperCase()}
+              {match.is_finished ? (
+                <span className="px-2 py-1 bg-slate-100 rounded-full">Beendet</span>
+              ) : (
+                match.league_shortcut.toUpperCase()
+              )}
             </div>
           </div>
 
@@ -449,7 +460,14 @@ export default function BetsPage() {
                 )}
               </div>
               <span className={`text-xs sm:text-sm font-bold ${homeTeamOver250 ? 'text-orange-600' : 'text-slate-600'}`}>
-                {formatCurrency(match.home_stake)}
+                {match.home_real_stake > 0 && match.home_stake > 1 ? (
+                  <>
+                    <span className="text-[10px] sm:text-xs text-slate-500">({formatCurrency(match.home_real_stake)}) </span>
+                    {formatCurrency(match.home_stake)}
+                  </>
+                ) : (
+                  formatCurrency(match.home_stake)
+                )}
               </span>
             </div>
 
@@ -466,7 +484,14 @@ export default function BetsPage() {
                 )}
               </div>
               <span className={`text-xs sm:text-sm font-bold ${awayTeamOver250 ? 'text-orange-600' : 'text-slate-600'}`}>
-                {formatCurrency(match.away_stake)}
+                {match.away_real_stake > 0 && match.away_stake > 1 ? (
+                  <>
+                    <span className="text-[10px] sm:text-xs text-slate-500">({formatCurrency(match.away_real_stake)}) </span>
+                    {formatCurrency(match.away_stake)}
+                  </>
+                ) : (
+                  formatCurrency(match.away_stake)
+                )}
               </span>
             </div>
           </div>
