@@ -657,28 +657,23 @@ export default function BetsPage() {
                       />
                     </div>
                   </div>
-                  {/* Zeile 2: Einsatz (Quote!) + Speichern */}
+                  {/* Zeile 2: Einsatz (SUMME!) readonly + Speichern */}
                   <div className="flex items-center gap-1.5 sm:gap-2">
                     <span className="text-xs sm:text-sm text-slate-600 font-medium whitespace-nowrap">Einsatz:</span>
                     <input
                       type="number"
-                      step="0.01"
-                      min="1"
-                      max="50"
-                      value={oddsInput}
-                      onChange={(e) => setOddsInput(e.target.value)}
-                      className="flex-1 px-2 sm:px-3 py-1.5 sm:py-2 border border-slate-300 rounded-lg text-xs sm:text-sm font-semibold text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                      placeholder={effectiveOddsX?.toString() || "3.4"}
+                      value={((parseFloat(homeStakeInput) || 0) + (parseFloat(awayStakeInput) || 0)).toString()}
+                      readOnly
+                      className="flex-1 px-2 sm:px-3 py-1.5 sm:py-2 border border-slate-200 rounded-lg text-xs sm:text-sm font-semibold text-slate-600 bg-slate-50"
                     />
                     <button
                       onClick={() => {
-                        const quote = parseFloat(oddsInput)
                         const homeStake = parseFloat(homeStakeInput) || 0
                         const awayStake = parseFloat(awayStakeInput) || 0
-                        if (quote >= 1 && quote <= 50 && (homeStake > 0 || awayStake > 0)) {
-                          handleSaveOdds(match.id, quote, match, homeStake, awayStake)
+                        if (effectiveOddsX && (homeStake > 0 || awayStake > 0)) {
+                          handleSaveOdds(match.id, effectiveOddsX, match, homeStake, awayStake)
                         } else {
-                          alert('Bitte gültige Werte eingeben (Einsatz 1-50, mind. 1 Einsatz)')
+                          alert('Bitte gültigen Einsatz eingeben')
                         }
                       }}
                       disabled={savingMatchId === match.id}
