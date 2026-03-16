@@ -323,27 +323,39 @@ export default function BetsPage() {
   const isLastMatchday = currentIndex === availableMatchdays.length - 1
 
   // ─── Einsatz speichern ────────────────────────────────────────────────────────
-  const handleSaveOdds = async (matchId: number, stake: number, match: Match) => {
+  const handleSaveOdds = async (matchId: number, quote: number, match: Match, homeStake?: number, awayStake?: number) => {
     setSavingMatchId(matchId)
     try {
+      // Berechne home_stake und away_stake
+      let finalHomeStake = homeStake ?? 0
+      let finalAwayStake = awayStake ?? 0
+      
+      // total_stake = home_stake + away_stake
+      const totalStake = finalHomeStake + finalAwayStake
+      
       const { error } = await supabase.from('bets').upsert({
         match_id: matchId,
         matchday: selectedMatchday,
         season: leagueConfig.season,
-        odds: stake,
-        home_stake: match.home_stake,
-        away_stake: match.away_stake,
-        total_stake: stake,
+        odds: quote,
+        home_stake: finalHomeStake,
+        away_stake: finalAwayStake,
+        total_stake: totalStake,
       }, { onConflict: 'match_id' })
 
       if (error) throw error
 
-      setMatches(prev => prev.map(m => m.id === matchId ? { ...m, odds: stake, bet_total_stake: stake } : m))
+      setMatches(prev => prev.map(m => m.id === matchId ? { 
+        ...m, 
+        odds: quote, 
+        bet_total_stake: totalStake 
+      } : m))
 
-      if (match.home_stake > 250 || match.away_stake > 250) {
-        const alternative = calculateAlternativeStake(match.total_stake, stake)
+      // Alternative Stake Check (wenn über 250€)
+      if (finalHomeStake > 250 || finalAwayStake > 250) {
+        const alternative = calculateAlternativeStake(totalStake, quote)
         setAlternativeStakes(prev => new Map(prev).set(matchId, {
-          matchId, alternativeAmount: alternative, originalStake: match.total_stake, quote: stake,
+          matchId, alternativeAmount: alternative, originalStake: totalStake, quote: quote,
         }))
       } else {
         setAlternativeStakes(prev => { const m = new Map(prev); m.delete(matchId); return m })
@@ -414,8 +426,20 @@ export default function BetsPage() {
     const matchApiOdds = apiOdds.get(match.id)
     const effectiveOddsX = match.odds_x ?? matchApiOdds?.draw ?? null
 
-    const defaultStake = match.odds || match.total_stake
-    const [oddsInput, setOddsInput] = useState<string>(defaultStake.toString())
+    const [oddsInput, setOddsInput] = useState<string>(effectiveOddsX?.toString() || '')
+    const [homeStakeInput, setHomeStakeInput] = useState<string>(
+      match.home_real_stake > 0 ? match.home_real_stake.toString() : (match.home_stake > 0 ? match.home_stake.toString() : '')
+    )
+    const [awayStakeInput, setAwayStakeInput] = useState<string>(
+      match.away_real_stake > 0 ? match.away_real_stake.toString() : (match.away_stake > 0 ? match.away_stake.toString() : '')
+    )
+
+    // Bestimme welche Teams Einsatz haben
+    const homeHasStake = match.home_stake > 0 || match.home_real_stake > 0
+    const awayHasStake = match.away_stake > 0 || match.away_real_stake > 0
+    const bothTeamsHaveStake = homeHasStake && awayHasStake
+    const onlyHomeHasStake = homeHasStake && !awayHasStake
+    const onlyAwayHasStake = awayHasStake && !homeHasStake
 
     const alternative = alternativeStakes.get(match.id)
     const isAlreadyBet = match.odds !== null && match.odds !== undefined
@@ -598,44 +622,138 @@ export default function BetsPage() {
             </div>
           )}
 
-          {/* Einsatz Input */}
+          {/* Einsatz Input - dynamisch 1 oder 2 Felder */}
           {canBet && (
             <>
-              <div className="flex items-center gap-1.5 sm:gap-2">
-                <span className="text-xs sm:text-sm text-slate-600 font-medium whitespace-nowrap">Einsatz:</span>
-                <input
-                  type="number"
-                  step="1"
-                  min="1"
-                  max="1000"
-                  value={oddsInput}
-                  onChange={(e) => setOddsInput(e.target.value)}
-                  className="flex-1 px-2 sm:px-3 py-1.5 sm:py-2 border border-slate-300 rounded-lg text-xs sm:text-sm font-semibold text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                  placeholder="Einsatz"
-                />
-                <button
-                  onClick={() => {
-                    const stake = parseFloat(oddsInput)
-                    if (stake >= 1 && stake <= 1000) {
-                      handleSaveOdds(match.id, stake, match)
-                    } else {
-                      alert('Bitte einen Einsatz zwischen 1€ und 1000€ eingeben')
-                    }
-                  }}
-                  disabled={savingMatchId === match.id}
-                  className="px-8 sm:px-5 py-1.5 sm:py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white rounded-lg transition font-semibold text-xs sm:text-sm whitespace-nowrap"
-                >
-                  {savingMatchId === match.id ? '...' : 'Speichern'}
-                </button>
-              </div>
-
-              {effectiveOddsX && oddsInput && parseFloat(oddsInput) > 0 && (
-                <div className="flex items-center justify-end mt-1">
-                  <span className="text-[10px] sm:text-xs text-slate-500">
-                    Gewinn: {formatCurrency(parseFloat(oddsInput) * effectiveOddsX)}
-                  </span>
+              {bothTeamsHaveStake ? (
+                /* Beide Teams haben Einsatz - 2 Zeilen */
+                <div className="space-y-2">
+                  {/* Zeile 1: Heim und Gast nebeneinander */}
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 flex-1">
+                      <span className="text-xs sm:text-sm text-slate-600 font-medium whitespace-nowrap">Heim:</span>
+                      <input
+                        type="number"
+                        step="0.5"
+                        min="0"
+                        max="1000"
+                        value={homeStakeInput}
+                        onChange={(e) => setHomeStakeInput(e.target.value)}
+                        className="flex-1 px-2 sm:px-3 py-1.5 sm:py-2 border border-slate-300 rounded-lg text-xs sm:text-sm font-semibold text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                        placeholder={match.home_real_stake > 0 ? match.home_real_stake.toString() : (match.home_stake > 0 ? match.home_stake.toString() : '0')}
+                      />
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-1">
+                      <span className="text-xs sm:text-sm text-slate-600 font-medium whitespace-nowrap">Gast:</span>
+                      <input
+                        type="number"
+                        step="0.5"
+                        min="0"
+                        max="1000"
+                        value={awayStakeInput}
+                        onChange={(e) => setAwayStakeInput(e.target.value)}
+                        className="flex-1 px-2 sm:px-3 py-1.5 sm:py-2 border border-slate-300 rounded-lg text-xs sm:text-sm font-semibold text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                        placeholder={match.away_real_stake > 0 ? match.away_real_stake.toString() : (match.away_stake > 0 ? match.away_stake.toString() : '0')}
+                      />
+                    </div>
+                  </div>
+                  {/* Zeile 2: Einsatz (Quote!) + Speichern */}
+                  <div className="flex items-center gap-1.5 sm:gap-2">
+                    <span className="text-xs sm:text-sm text-slate-600 font-medium whitespace-nowrap">Einsatz:</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="1"
+                      max="50"
+                      value={oddsInput}
+                      onChange={(e) => setOddsInput(e.target.value)}
+                      className="flex-1 px-2 sm:px-3 py-1.5 sm:py-2 border border-slate-300 rounded-lg text-xs sm:text-sm font-semibold text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                      placeholder={effectiveOddsX?.toString() || "3.4"}
+                    />
+                    <button
+                      onClick={() => {
+                        const quote = parseFloat(oddsInput)
+                        const homeStake = parseFloat(homeStakeInput) || 0
+                        const awayStake = parseFloat(awayStakeInput) || 0
+                        if (quote >= 1 && quote <= 50 && (homeStake > 0 || awayStake > 0)) {
+                          handleSaveOdds(match.id, quote, match, homeStake, awayStake)
+                        } else {
+                          alert('Bitte gültige Werte eingeben (Einsatz 1-50, mind. 1 Einsatz)')
+                        }
+                      }}
+                      disabled={savingMatchId === match.id}
+                      className="px-3 sm:px-5 py-1.5 sm:py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white rounded-lg transition font-semibold text-xs sm:text-sm whitespace-nowrap"
+                    >
+                      {savingMatchId === match.id ? '...' : 'Speichern'}
+                    </button>
+                  </div>
+                  {/* Zeile 3: Angezeigter Gesamteinsatz + Gewinn */}
+                  <div className="text-xs text-slate-500 text-right space-y-0.5">
+                    <div>Gesamteinsatz: {formatCurrency((parseFloat(homeStakeInput) || 0) + (parseFloat(awayStakeInput) || 0))}</div>
+                    {oddsInput && parseFloat(oddsInput) > 0 && (
+                      <div>Gewinn: {formatCurrency(((parseFloat(homeStakeInput) || 0) + (parseFloat(awayStakeInput) || 0)) * parseFloat(oddsInput))}</div>
+                    )}
+                  </div>
                 </div>
-              )}
+              ) : onlyHomeHasStake ? (
+                /* Nur Heim-Team hat Einsatz - Nur Team-Einsatz + Speichern */
+                <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                  <span className="text-xs sm:text-sm text-slate-600 font-medium whitespace-nowrap">Einsatz {match.home_team.short_name}:</span>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    max="1000"
+                    value={homeStakeInput}
+                    onChange={(e) => setHomeStakeInput(e.target.value)}
+                    className="w-20 px-2 py-1.5 sm:py-2 border border-slate-300 rounded-lg text-xs sm:text-sm font-semibold text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                    placeholder={match.home_real_stake > 0 ? match.home_real_stake.toString() : match.home_stake.toString()}
+                  />
+                  <button
+                    onClick={() => {
+                      const homeStake = parseFloat(homeStakeInput) || 0
+                      if (effectiveOddsX && homeStake > 0) {
+                        handleSaveOdds(match.id, effectiveOddsX, match, homeStake, 0)
+                      } else {
+                        alert('Bitte gültigen Einsatz eingeben')
+                      }
+                    }}
+                    disabled={savingMatchId === match.id}
+                    className="px-3 sm:px-5 py-1.5 sm:py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white rounded-lg transition font-semibold text-xs sm:text-sm whitespace-nowrap"
+                  >
+                    {savingMatchId === match.id ? '...' : 'Speichern'}
+                  </button>
+                </div>
+              ) : onlyAwayHasStake ? (
+                /* Nur Gast-Team hat Einsatz - Nur Team-Einsatz + Speichern */
+                <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                  <span className="text-xs sm:text-sm text-slate-600 font-medium whitespace-nowrap">Einsatz {match.away_team.short_name}:</span>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    max="1000"
+                    value={awayStakeInput}
+                    onChange={(e) => setAwayStakeInput(e.target.value)}
+                    className="w-20 px-2 py-1.5 sm:py-2 border border-slate-300 rounded-lg text-xs sm:text-sm font-semibold text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                    placeholder={match.away_real_stake > 0 ? match.away_real_stake.toString() : match.away_stake.toString()}
+                  />
+                  <button
+                    onClick={() => {
+                      const awayStake = parseFloat(awayStakeInput) || 0
+                      if (effectiveOddsX && awayStake > 0) {
+                        handleSaveOdds(match.id, effectiveOddsX, match, 0, awayStake)
+                      } else {
+                        alert('Bitte gültigen Einsatz eingeben')
+                      }
+                    }}
+                    disabled={savingMatchId === match.id}
+                    className="px-3 sm:px-5 py-1.5 sm:py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white rounded-lg transition font-semibold text-xs sm:text-sm whitespace-nowrap"
+                  >
+                    {savingMatchId === match.id ? '...' : 'Speichern'}
+                  </button>
+                </div>
+              ) : null}
             </>
           )}
 
