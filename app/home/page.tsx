@@ -6,7 +6,7 @@ import Header from '@/components/Header'
 
 // ─── Liga-Konfiguration ────────────────────────────────────────────────────────
 const LEAGUES = [
-  { key: 'gesamt', label: 'Gesamt',  color: 'slate'  },
+  { key: 'gesamt', label: 'Gesamt',  color: 'orange'  },
   { key: 'bl1',    label: '1. BL',   color: 'blue'   },
   { key: 'bl2',    label: '2. BL',   color: 'slate'  },
   { key: 'epl',    label: 'PL',      color: 'purple' },

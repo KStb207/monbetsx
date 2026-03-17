@@ -62,6 +62,8 @@ interface Match {
   odds: number | null
   odds_x: number | null
   bet_total_stake: number | null
+  bet_payout: number | null
+  bet_result: string | null 
 }
 
 interface AlternativeStake {
@@ -191,14 +193,14 @@ export default function BetsPage() {
 
       const { data: bets } = await supabase
         .from('bets')
-        .select('match_id, odds, total_stake')
+        .select('match_id, odds, total_stake, payout, result')
         .in('match_id', matchIds)
 
       const stakesMap = new Map(stakes?.map(s => [s.team_id, { 
         stake: s.stake, 
         real_stake: s.real_stake || 0
       }]) || [])
-      const betsMap = new Map(bets?.map(b => [b.match_id, { odds: b.odds, total_stake: b.total_stake }]) || [])
+      const betsMap = new Map(bets?.map(b => [b.match_id, { odds: b.odds, total_stake: b.total_stake, payout: b.payout, result: b.result,}]) || [])
 
       // Finde höchsten gespielten Spieltag
       const maxPlayedMatchday = allMatches
@@ -238,6 +240,8 @@ export default function BetsPage() {
           total_stake: homeStakeData.stake + awayStakeData.stake,
           odds: betData?.odds || null,
           bet_total_stake: betData?.total_stake || null,
+		  bet_payout: betData?.payout || null,
+		  bet_result: betData?.result || null,
         }
       })
 
@@ -605,7 +609,7 @@ export default function BetsPage() {
           {effectiveOddsX ? (
             <div className="flex items-center justify-between pt-2 border-t border-slate-100 mb-2 sm:mb-3">
               <span className="text-xs sm:text-sm text-slate-600">Tipico Quote (X):</span>
-              <span className="text-sm sm:text-base font-bold text-green-700">{effectiveOddsX.toFixed(2)}</span>
+              <span className="text-sm sm:text-base font-bold text-slate-600">{effectiveOddsX.toFixed(2)}</span>
             </div>
           ) : (
             <div className="flex items-center justify-between pt-2 border-t border-slate-100 mb-2 sm:mb-3">
@@ -621,6 +625,14 @@ export default function BetsPage() {
               <span className="text-sm sm:text-base font-bold text-blue-700">{formatCurrency(match.bet_total_stake)}</span>
             </div>
           )}
+		  
+		{/* Gewinn anzeigen wenn Unentschieden */}
+{match.is_finished && match.bet_result === 'x' && match.bet_payout != null && match.bet_payout > 0 && (
+  <div className="flex items-center justify-between mb-2 sm:mb-3 bg-green-50 border border-green-200 rounded-lg p-2">
+    <span className="text-xs sm:text-sm text-green-700 font-medium">Gewinn:</span>
+    <span className="text-sm sm:text-base font-bold text-green-700">{formatCurrency(match.bet_payout)}</span>
+  </div>
+)}
 
           {/* Einsatz Input - dynamisch 1 oder 2 Felder */}
           {canBet && (
