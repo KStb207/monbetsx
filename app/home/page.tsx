@@ -4,146 +4,197 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import Header from '@/components/Header'
 
-interface Stats {
-  bl1TotalStake: number
-  bl2TotalStake: number
-  totalStake: number
-  bl1TotalPayout: number
-  bl2TotalPayout: number
-  totalPayout: number
-  bl1Profit: number
-  bl2Profit: number
-  totalProfit: number
+// ─── Liga-Konfiguration ────────────────────────────────────────────────────────
+const LEAGUES = [
+  { key: 'gesamt', label: 'Gesamt',  color: 'slate'  },
+  { key: 'bl1',    label: '1. BL',   color: 'blue'   },
+  { key: 'bl2',    label: '2. BL',   color: 'slate'  },
+  { key: 'epl',    label: 'PL',      color: 'purple' },
+  { key: 'la_liga',label: 'La Liga', color: 'red'    },
+  { key: 'serie_a',label: 'Serie A', color: 'green'  },
+  { key: 'ligue_1',label: 'Ligue 1', color: 'indigo' },
+] as const
+
+type LeagueKey = typeof LEAGUES[number]['key']
+
+const COUNTRY_COLORS: Record<string, { active: string; inactive: string; border: string }> = {
+  gesamt:  { active: 'linear-gradient(135deg, #334155 0%, #475569 100%)',                                                                                                                                                                              inactive: 'linear-gradient(135deg, rgba(51,65,85,0.08) 0%, rgba(71,85,105,0.08) 100%)',                                                                                                                                                               border: '#475569' },
+  bl1:     { active: 'linear-gradient(135deg, #1a1a1a 33%, #CC0000 33%, #CC0000 66%, #FFCE00 66%)',                                                                                                                                                    inactive: 'linear-gradient(135deg, rgba(26,26,26,0.08) 33%, rgba(204,0,0,0.08) 33%, rgba(204,0,0,0.08) 66%, rgba(255,206,0,0.08) 66%)',                                                                                                              border: '#CC0000' },
+  bl2:     { active: 'linear-gradient(135deg, #1a1a1a 33%, #CC0000 33%, #CC0000 66%, #FFCE00 66%)',                                                                                                                                                    inactive: 'linear-gradient(135deg, rgba(26,26,26,0.08) 33%, rgba(204,0,0,0.08) 33%, rgba(204,0,0,0.08) 66%, rgba(255,206,0,0.08) 66%)',                                                                                                              border: '#CC0000' },
+  epl:     { active: 'linear-gradient(#CF101A, #CF101A) center/33% 100% no-repeat, linear-gradient(#CF101A, #CF101A) center/100% 33% no-repeat, #f5f5f5',  inactive: 'linear-gradient(rgba(207,16,26,0.25), rgba(207,16,26,0.25)) center/33% 100% no-repeat, linear-gradient(rgba(207,16,26,0.25), rgba(207,16,26,0.25)) center/100% 33% no-repeat, #f9f9f9', border: '#CF101A' },
+  la_liga: { active: 'linear-gradient(135deg, #AA151B 25%, #F1BF00 25%, #F1BF00 75%, #AA151B 75%)',                                                                                                                                                   inactive: 'linear-gradient(135deg, rgba(170,21,27,0.1) 25%, rgba(241,191,0,0.1) 25%, rgba(241,191,0,0.1) 75%, rgba(170,21,27,0.1) 75%)',                                                                                                             border: '#AA151B' },
+  serie_a: { active: 'linear-gradient(135deg, #009246 33%, #f5f5f5 33%, #f5f5f5 66%, #CE2B37 66%)',                                                                                                                                                   inactive: 'linear-gradient(135deg, rgba(0,146,70,0.1) 33%, rgba(245,245,245,0.3) 33%, rgba(245,245,245,0.3) 66%, rgba(206,43,55,0.1) 66%)',                                                                                                          border: '#009246' },
+  ligue_1: { active: 'linear-gradient(135deg, #002395 33%, #f5f5f5 33%, #f5f5f5 66%, #ED2939 66%)',                                                                                                                                                   inactive: 'linear-gradient(135deg, rgba(0,35,149,0.1) 33%, rgba(245,245,245,0.3) 33%, rgba(245,245,245,0.3) 66%, rgba(237,41,57,0.1) 66%)',                                                                                                          border: '#002395' },
 }
 
-interface CurrentStakes {
-  bl1Current: number
-  bl2Current: number
-  totalCurrent: number
+// ─── Interfaces ───────────────────────────────────────────────────────────────
+interface LeagueStats {
+  totalStake: number
+  totalPayout: number
+  profit: number
+  betCount: number
+  openStake: number
+  openBetCount: number
   nextMatchday: number
 }
 
+type AllStats = Record<string, LeagueStats>
+
+const emptyStats = (): LeagueStats => ({
+  totalStake: 0,
+  totalPayout: 0,
+  profit: 0,
+  betCount: 0,
+  openStake: 0,
+  openBetCount: 0,
+  nextMatchday: 0,
+})
+
+// ─── Hauptkomponente ──────────────────────────────────────────────────────────
 export default function HomePage() {
-  const [stats, setStats] = useState<Stats | null>(null)
-  const [currentStakes, setCurrentStakes] = useState<CurrentStakes | null>(null)
+  const [allStats, setAllStats] = useState<AllStats>({})
   const [loading, setLoading] = useState(true)
+  const [activeLeague, setActiveLeague] = useState<LeagueKey>('gesamt')
 
   useEffect(() => {
     async function fetchData() {
       setLoading(true)
-      
       try {
-        // 1. Hole alle beendeten Spiele mit Bets
+        // 1. Abgeschlossene Bets
         const { data: bets } = await supabase
           .from('bets')
           .select(`
             *,
-            matches!inner(
-              league_shortcut,
-              is_finished
-            )
+            matches!inner(league_shortcut, is_finished)
           `)
           .eq('matches.is_finished', true)
           .eq('season', '2025')
-        
-        // 2. Berechne Statistiken
-        let bl1TotalStake = 0
-        let bl2TotalStake = 0
-        let bl1TotalPayout = 0
-        let bl2TotalPayout = 0
-        
+
+        const statsMap: AllStats = {}
+
         bets?.forEach((bet: any) => {
           const league = bet.matches.league_shortcut
+          if (!statsMap[league]) statsMap[league] = emptyStats()
+
           const stake = bet.total_stake || 0
           const payout = bet.payout || 0
-          
-          if (league === 'bl1') {
-            bl1TotalStake += stake
-            bl1TotalPayout += payout
-          } else if (league === 'bl2') {
-            bl2TotalStake += stake
-            bl2TotalPayout += payout
+          const evaluated = bet.is_evaluated === true
+
+          if (evaluated) {
+            statsMap[league].totalStake += stake
+            statsMap[league].totalPayout += payout
+            statsMap[league].betCount++
           }
         })
-        
-        setStats({
-          bl1TotalStake,
-          bl2TotalStake,
-          totalStake: bl1TotalStake + bl2TotalStake,
-          bl1TotalPayout,
-          bl2TotalPayout,
-          totalPayout: bl1TotalPayout + bl2TotalPayout,
-          bl1Profit: bl1TotalPayout - bl1TotalStake,
-          bl2Profit: bl2TotalPayout - bl2TotalStake,
-          totalProfit: (bl1TotalPayout + bl2TotalPayout) - (bl1TotalStake + bl2TotalStake)
+
+        // Profit berechnen
+        Object.keys(statsMap).forEach(k => {
+          statsMap[k].profit = statsMap[k].totalPayout - statsMap[k].totalStake
         })
-        
-        // 3. Finde nächsten Spieltag basierend auf Datum
-        const now = new Date()
-        
-        const { data: upcomingMatches } = await supabase
-          .from('matches')
-          .select('matchday, match_date')
-          .gte('match_date', now.toISOString())
-          .eq('season', '2025')
-          .order('match_date', { ascending: true })
-          .order('matchday', { ascending: true })
-          .limit(1)
-        
-        const nextMatchday = upcomingMatches?.[0]?.matchday || 22
-        
-        const { data: stakes } = await supabase
-          .from('team_stakes')
+
+        // 2. Offene Bets (nicht evaluiert)
+        const { data: openBets } = await supabase
+          .from('bets')
           .select(`
-            stake,
-            teams!inner(league_shortcut)
+            *,
+            matches!inner(league_shortcut, is_finished)
           `)
-          .eq('matchday', nextMatchday)
+          .eq('is_evaluated', false)
           .eq('season', '2025')
-        
-        let bl1Current = 0
-        let bl2Current = 0
-        
-        stakes?.forEach((s: any) => {
-          const stake = s.stake || 0
-          if (s.teams.league_shortcut === 'bl1') {
-            bl1Current += stake
-          } else if (s.teams.league_shortcut === 'bl2') {
-            bl2Current += stake
+
+        openBets?.forEach((bet: any) => {
+          const league = bet.matches.league_shortcut
+          if (!statsMap[league]) statsMap[league] = emptyStats()
+          statsMap[league].openStake += bet.total_stake || 0
+          statsMap[league].openBetCount++
+        })
+
+        // 3. Nächster Spieltag pro Liga
+        const now = new Date()
+        const leagueKeys = ['bl1', 'bl2', 'epl', 'la_liga', 'serie_a', 'ligue_1']
+
+        for (const league of leagueKeys) {
+          const { data: upcoming } = await supabase
+            .from('matches')
+            .select('matchday')
+            .eq('league_shortcut', league)
+            .eq('season', '2025')
+            .gte('match_date', now.toISOString())
+            .order('match_date', { ascending: true })
+            .limit(1)
+
+          if (upcoming?.[0]) {
+            if (!statsMap[league]) statsMap[league] = emptyStats()
+            statsMap[league].nextMatchday = upcoming[0].matchday
           }
-        })
-        
-        setCurrentStakes({
-          bl1Current,
-          bl2Current,
-          totalCurrent: bl1Current + bl2Current,
-          nextMatchday
-        })
-        
+        }
+
+        // 4. Aktuelle Einsätze (team_stakes) pro Liga
+        for (const league of leagueKeys) {
+          const matchday = statsMap[league]?.nextMatchday
+          if (!matchday) continue
+
+          const { data: stakes } = await supabase
+            .from('team_stakes')
+            .select(`stake, teams!inner(league_shortcut)`)
+            .eq('matchday', matchday)
+            .eq('season', '2025')
+            .eq('teams.league_shortcut', league)
+
+          if (stakes) {
+            if (!statsMap[league]) statsMap[league] = emptyStats()
+            // openStake aus team_stakes nur wenn keine offenen bets
+            // Wir lassen openStake aus bets Tabelle (oben schon gesetzt)
+          }
+        }
+
+        setAllStats(statsMap)
       } catch (error) {
         console.error('Fehler beim Laden:', error)
       } finally {
         setLoading(false)
       }
     }
-    
+
     fetchData()
   }, [])
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('de-DE', { 
-      style: 'currency', 
+  const formatCurrency = (amount: number) =>
+    new Intl.NumberFormat('de-DE', {
+      style: 'currency',
       currency: 'EUR',
       minimumFractionDigits: 2,
-      maximumFractionDigits: 2
+      maximumFractionDigits: 2,
     }).format(amount)
+
+  // Gesamt-Stats aggregieren
+  const getStats = (league: LeagueKey): LeagueStats => {
+    if (league === 'gesamt') {
+      const keys = Object.keys(allStats)
+      return keys.reduce((acc, k) => {
+        const s = allStats[k]
+        return {
+          totalStake: acc.totalStake + s.totalStake,
+          totalPayout: acc.totalPayout + s.totalPayout,
+          profit: acc.profit + s.profit,
+          betCount: acc.betCount + s.betCount,
+          openStake: acc.openStake + s.openStake,
+          openBetCount: acc.openBetCount + s.openBetCount,
+          nextMatchday: 0,
+        }
+      }, emptyStats())
+    }
+    return allStats[league] ?? emptyStats()
   }
+
+  const activeStats = getStats(activeLeague)
+  const colors = COUNTRY_COLORS[activeLeague]
 
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
         <Header />
-        <div className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto px-4 py-8">
           <div className="text-center py-12">
             <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
             <p className="mt-2 text-slate-600">Lade Übersicht...</p>
@@ -156,117 +207,135 @@ export default function HomePage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
       <Header />
-      
-      <div className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
-        <h1 className="text-3xl font-bold text-slate-800 mb-6">Übersicht</h1>
-        
-        <div className="grid gap-6 md:grid-cols-2">
-          {/* Statistiken Card */}
-          <div className="bg-white rounded-lg shadow-lg p-6">
-            <h3 className="text-xl font-bold text-slate-800 mb-4">Statistiken</h3>
-            
-            {stats && (
-              <div className="space-y-4">
-                {/* 1. Bundesliga */}
-                <div className="border-b border-slate-200 pb-3">
-                  <div className="text-sm font-semibold text-blue-700 mb-2">1. Bundesliga</div>
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div>
-                      <span className="text-slate-600">Einsätze:</span>
-                      <span className="font-bold text-slate-800 ml-2">{formatCurrency(stats.bl1TotalStake)}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-600">Gewinne:</span>
-                      <span className="font-bold text-green-700 ml-2">{formatCurrency(stats.bl1TotalPayout)}</span>
-                    </div>
-                  </div>
-                </div>
-                
-                {/* 2. Bundesliga */}
-                <div className="border-b border-slate-200 pb-3">
-                  <div className="text-sm font-semibold text-slate-700 mb-2">2. Bundesliga</div>
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div>
-                      <span className="text-slate-600">Einsätze:</span>
-                      <span className="font-bold text-slate-800 ml-2">{formatCurrency(stats.bl2TotalStake)}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-600">Gewinne:</span>
-                      <span className="font-bold text-green-700 ml-2">{formatCurrency(stats.bl2TotalPayout)}</span>
-                    </div>
-                  </div>
-                </div>
-                
-                {/* Gesamt */}
-                <div className="border-b border-slate-200 pb-3">
-                  <div className="text-sm font-semibold text-slate-800 mb-2">Gesamt</div>
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div>
-                      <span className="text-slate-600">Einsätze:</span>
-                      <span className="font-bold text-slate-800 ml-2">{formatCurrency(stats.totalStake)}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-600">Gewinne:</span>
-                      <span className="font-bold text-green-700 ml-2">{formatCurrency(stats.totalPayout)}</span>
-                    </div>
-                  </div>
-                </div>
-                
-                {/* Gesamtgewinn */}
-                <div className="bg-slate-50 rounded-lg p-4 mt-4">
-                  <div className="text-center">
-                    <div className="text-xs text-slate-600 mb-1">Gesamtgewinn</div>
-                    <div className={`text-2xl font-bold ${
-                      stats.totalProfit >= 0 ? 'text-green-600' : 'text-red-600'
-                    }`}>
-                      {formatCurrency(stats.totalProfit)}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+
+      <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
+        <h1 className="text-2xl font-bold text-slate-800 mb-5">Übersicht</h1>
+
+        {/* Liga-Tabs */}
+        <div className="grid grid-cols-7 gap-1 mb-6">
+          {LEAGUES.map(league => {
+            const isActive = activeLeague === league.key
+            const c = COUNTRY_COLORS[league.key]
+            return (
+              <button
+                key={league.key}
+                onClick={() => setActiveLeague(league.key as LeagueKey)}
+                style={{
+                  background: isActive ? c.active : c.inactive,
+                  borderColor: isActive ? c.border : '#d1d5db',
+                  boxShadow: isActive ? `0 0 0 1px ${c.border}` : undefined,
+                }}
+                className="px-1 py-2 rounded-lg font-semibold text-[10px] sm:text-xs transition whitespace-nowrap border text-slate-800 hover:opacity-90"
+              >
+                {league.label}
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Spieltag Badge (nicht bei Gesamt) */}
+        {activeLeague !== 'gesamt' && activeStats.nextMatchday > 0 && (
+          <div className="mb-4">
+            <span
+              className="text-xs px-3 py-1 rounded-full font-semibold"
+              style={{ background: `${colors.border}20`, color: colors.border, border: `1px solid ${colors.border}40` }}
+            >
+              Nächster Spieltag: {activeStats.nextMatchday}
+            </span>
           </div>
-          
-          {/* Aktuelle Einsätze Card */}
-          <div className="bg-white rounded-lg shadow-lg p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-bold text-slate-800">Aktuelle Einsätze</h3>
-              {currentStakes && (
-                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full font-semibold">
-                  Spieltag {currentStakes.nextMatchday}
-                </span>
-              )}
+        )}
+
+        <div className="grid gap-4 md:grid-cols-2">
+
+          {/* ── Abgeschlossene Wetten ──────────────────────────────────────── */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-2 h-2 rounded-full bg-slate-400"></div>
+              <h3 className="text-base font-bold text-slate-800">Abgeschlossene Wetten</h3>
+              <span className="ml-auto text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">
+                {activeStats.betCount} Wetten
+              </span>
             </div>
-            
-            {currentStakes && (
-              <div className="space-y-4">
-                {/* 1. Bundesliga */}
-                <div className="border-b border-slate-200 pb-3">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm font-semibold text-blue-700">1. Bundesliga</span>
-                    <span className="text-lg font-bold text-slate-800">{formatCurrency(currentStakes.bl1Current)}</span>
-                  </div>
-                </div>
-                
-                {/* 2. Bundesliga */}
-                <div className="border-b border-slate-200 pb-3">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm font-semibold text-slate-700">2. Bundesliga</span>
-                    <span className="text-lg font-bold text-slate-800">{formatCurrency(currentStakes.bl2Current)}</span>
-                  </div>
-                </div>
-                
-                {/* Gesamt */}
-                <div className="bg-blue-50 rounded-lg p-4 mt-4">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm font-semibold text-slate-800">Gesamt</span>
-                    <span className="text-2xl font-bold text-blue-700">{formatCurrency(currentStakes.totalCurrent)}</span>
-                  </div>
+
+            <div className="space-y-3">
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-slate-500">Gesamteinsatz</span>
+                <span className="font-semibold text-slate-800">{formatCurrency(activeStats.totalStake)}</span>
+              </div>
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-slate-500">Gesamtgewinn</span>
+                <span className="font-semibold text-green-700">{formatCurrency(activeStats.totalPayout)}</span>
+              </div>
+              <div className="border-t border-slate-100 pt-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-semibold text-slate-700">Profit / Verlust</span>
+                  <span className={`text-xl font-bold ${activeStats.profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {activeStats.profit >= 0 ? '+' : ''}{formatCurrency(activeStats.profit)}
+                  </span>
                 </div>
               </div>
-            )}
+            </div>
+          </div>
+
+          {/* ── Offene Wetten ──────────────────────────────────────────────── */}
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
+              <h3 className="text-base font-bold text-slate-800">Offene Wetten</h3>
+              <span className="ml-auto text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">
+                {activeStats.openBetCount} Wetten
+              </span>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-slate-500">Ausstehender Einsatz</span>
+                <span className="font-semibold text-slate-800">{formatCurrency(activeStats.openStake)}</span>
+              </div>
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-slate-500">Möglicher Gewinn</span>
+                <span className="font-semibold text-slate-400">–</span>
+              </div>
+              <div className="border-t border-slate-100 pt-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-semibold text-slate-700">Status</span>
+                  <span className="text-sm font-semibold text-blue-600">
+                    {activeStats.openBetCount > 0 ? 'Ausstehend' : 'Keine offenen Wetten'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        {/* ── Gesamtprofit Banner ────────────────────────────────────────────── */}
+        <div className="mt-4 bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <div className="text-xs text-slate-500 mb-0.5">Gesamtprofit inkl. offene Wetten</div>
+              <div className={`text-3xl font-bold ${(activeStats.profit - activeStats.openStake) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {(activeStats.profit - activeStats.openStake) >= 0 ? '+' : ''}
+                {formatCurrency(activeStats.profit - activeStats.openStake)}
+              </div>
+            </div>
+            <div className="flex gap-4 text-sm text-slate-500">
+              <div>
+                <span className="block text-xs text-slate-400">Realisiert</span>
+                <span className={`font-semibold ${activeStats.profit >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                  {activeStats.profit >= 0 ? '+' : ''}{formatCurrency(activeStats.profit)}
+                </span>
+              </div>
+              <div>
+                <span className="block text-xs text-slate-400">Offen</span>
+                <span className="font-semibold text-blue-600">
+                  -{formatCurrency(activeStats.openStake)}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
+
       </div>
     </div>
   )
