@@ -680,14 +680,20 @@ export default function BetsPage() {
                     />
                     <button
                       onClick={() => {
-                        const homeStake = parseFloat(homeStakeInput) || 0
-                        const awayStake = parseFloat(awayStakeInput) || 0
-                        if (effectiveOddsX && (homeStake > 0 || awayStake > 0)) {
-                          handleSaveOdds(match.id, effectiveOddsX, match, homeStake, awayStake)
-                        } else {
-                          alert('Bitte gültigen Einsatz eingeben')
-                        }
-                      }}
+  const homeStake = parseFloat(homeStakeInput) || 0
+  const awayStake = parseFloat(awayStakeInput) || 0
+
+  if (!effectiveOddsX) {
+    alert('Bitte zuerst eine Quote eingeben')
+    return
+  }
+  if (homeStake === 0 && awayStake === 0) {
+    alert('Bitte gültigen Einsatz eingeben')
+    return
+  }
+
+  handleSaveOdds(match.id, effectiveOddsX, match, homeStake, awayStake)
+}}
                       disabled={savingMatchId === match.id}
                       className="px-3 sm:px-5 py-1.5 sm:py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white rounded-lg transition font-semibold text-xs sm:text-sm whitespace-nowrap"
                     >
