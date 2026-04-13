@@ -702,7 +702,7 @@ if (upcomingMatchdays.length > 0) {
                       {savingMatchId === match.id ? '...' : 'Speichern'}
                     </button>
                   </div>
-                  {/* Zeile 3: Angezeigter Gesamteinsatz + Gewinn */}
+                  {/* Zeile 3: Angezeigter Gesamteinsatz + Gewinn beider Teams */}
                   <div className="text-xs text-slate-500 text-right space-y-0.5">
                     <div>Gesamteinsatz: {formatCurrency((parseFloat(homeStakeInput) || 0) + (parseFloat(awayStakeInput) || 0))}</div>
                     {oddsInput && parseFloat(oddsInput) > 0 && (
