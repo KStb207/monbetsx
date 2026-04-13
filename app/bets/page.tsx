@@ -133,12 +133,14 @@ export default function BetsPage() {
         }
 
         const now = new Date()
-        const upcoming = data
-          .filter(m => new Date(m.match_date) >= now && !m.is_finished)
-          .sort((a, b) => new Date(a.match_date).getTime() - new Date(b.match_date).getTime())
+        const upcomingMatchdays = [...new Set(
+  data
+    .filter(m => !m.is_finished)
+    .map(m => m.matchday)
+)].sort((a, b) => a - b)
 
-        if (upcoming.length > 0) {
-          const firstUpcomingMatchday = upcoming[0].matchday
+if (upcomingMatchdays.length > 0) {
+  const firstUpcomingMatchday = upcomingMatchdays[0]
           setSelectedMatchday(firstUpcomingMatchday)
 
           // Nachholspiel-Erkennung: Gibt es einen späteren Spieltag mit kommenden Spielen?
