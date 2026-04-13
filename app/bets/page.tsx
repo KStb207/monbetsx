@@ -706,7 +706,7 @@ if (upcomingMatchdays.length > 0) {
                   <div className="text-xs text-slate-500 text-right space-y-0.5">
                     <div>Gesamteinsatz: {formatCurrency((parseFloat(homeStakeInput) || 0) + (parseFloat(awayStakeInput) || 0))}</div>
                     {oddsInput && parseFloat(oddsInput) > 0 && (
-                      <div>Gewinn: {formatCurrency(((parseFloat(homeStakeInput) || 0) + (parseFloat(awayStakeInput) || 0)) * parseFloat(oddsInput))}</div>
+                      <div>Gewinn: {formatCurrency(((parseFloat(homeStakeInput) || 0) + (parseFloat(awayStakeInput) || 0)) * effectiveOddsX )}</div>
                     )}
                   </div>
                 </div>
