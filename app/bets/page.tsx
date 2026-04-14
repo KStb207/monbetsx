@@ -1071,6 +1071,9 @@ export default function BetsPage() {
 
               {/* Kompakte Spiel-Liste */}
               <div className="space-y-2">
+			  <div className="text-xs sm:text-sm text-slate-500 mb-2">
+  {gesamtMatches.length} {gesamtMatches.length === 1 ? 'Wette' : 'Wetten'} gespeichert
+</div>
                 {gesamtMatches.map(match => {
                   const leagueInfo = LEAGUES.find(l => l.key === match.league_shortcut)
                   const possibleWin = match.bet_total_stake && match.odds ? match.bet_total_stake * match.odds : null
