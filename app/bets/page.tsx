@@ -79,9 +79,12 @@ interface ApiOdds {
   away: number | null
 }
 
+type ActiveTab = 'gesamt' | LeagueKey
+
 // ─── Hauptkomponente ──────────────────────────────────────────────────────────
 export default function BetsPage() {
-  const [activeLeague, setActiveLeague] = useState<LeagueKey>('bl1')
+  const [activeTab, setActiveTab] = useState<ActiveTab>('gesamt')
+  const activeLeague = (activeTab !== 'gesamt' ? activeTab : 'bl1') as LeagueKey
   const [selectedMatchday, setSelectedMatchday] = useState<number | null>(null)
   const [matches, setMatches] = useState<Match[]>([])
   const [availableMatchdays, setAvailableMatchdays] = useState<number[]>([])
@@ -97,71 +100,105 @@ export default function BetsPage() {
   const [loadingApiOdds, setLoadingApiOdds] = useState(false)
   const [nextActualMatchday, setNextActualMatchday] = useState<number | null>(null)
 
-  const leagueConfig = LEAGUES.find(l => l.key === activeLeague)!
+  // ─── Gesamt-Tab State ─────────────────────────────────────────────────────────
+  const [gesamtMatches, setGesamtMatches] = useState<Match[]>([])
+  const [gesamtLoading, setGesamtLoading] = useState(true)
+
+  const leagueConfig = LEAGUES.find(l => l.key === activeLeague) ?? LEAGUES[0]
+
+  // ─── Gesamt-Tab: Alle offenen Spiele mit gespeicherten Wetten laden ──────────
+  useEffect(() => {
+    if (activeTab !== 'gesamt') return
+
+    async function fetchGesamtMatches() {
+      setGesamtLoading(true)
+
+      const { data: betsData } = await supabase
+        .from('bets')
+        .select('match_id, odds, total_stake, payout, result')
+
+      if (!betsData?.length) {
+        setGesamtMatches([])
+        setGesamtLoading(false)
+        return
+      }
+
+      const matchIds = betsData.map(b => b.match_id)
+      const betsMap = new Map(betsData.map(b => [b.match_id, b]))
+
+      const { data: matchData } = await supabase
+        .from('matches')
+        .select(`*, home_team:teams!matches_home_team_id_fkey(id, name, short_name), away_team:teams!matches_away_team_id_fkey(id, name, short_name)`)
+        .in('id', matchIds)
+        .eq('is_finished', false)
+        .order('match_date', { ascending: true })
+
+      const enriched: Match[] = (matchData || []).map(match => {
+        const bet = betsMap.get(match.id)
+        return {
+          ...match,
+          home_stake: 0,
+          away_stake: 0,
+          home_real_stake: 0,
+          away_real_stake: 0,
+          home_games_without_draw: 0,
+          away_games_without_draw: 0,
+          total_stake: bet?.total_stake || 0,
+          odds: bet?.odds || null,
+          bet_total_stake: bet?.total_stake || null,
+          bet_payout: bet?.payout || null,
+          bet_result: bet?.result || null,
+        }
+      })
+
+      setGesamtMatches(enriched)
+      setGesamtLoading(false)
+    }
+
+    fetchGesamtMatches()
+  }, [activeTab])
 
   // ─── Beim Liga-Wechsel: Matchdays neu laden ──────────────────────────────────
   useEffect(() => {
+    if (activeTab === 'gesamt') return
+
     setSelectedMatchday(null)
     setMatches([])
     setApiOdds(new Map())
     setNextActualMatchday(null)
-    setExpandedMatches(new Set()) // Setze aufgeklappte Spiele zurück beim Liga-Wechsel
+    setExpandedMatches(new Set())
 
     async function fetchMatchdays() {
       const { data } = await supabase
         .from('matches')
         .select('matchday, match_date, is_finished')
         .eq('league_shortcut', activeLeague)
-        .order('matchday', { ascending: true })
+        .order('match_date', { ascending: true })
 
       if (data) {
         const uniqueMatchdays = [...new Set(data.map(m => m.matchday))].sort((a, b) => a - b)
         setAvailableMatchdays(uniqueMatchdays)
 
-        // Spiele nach Spieltag gruppieren
-        const matchdayGroups = new Map<number, { match_date: string; is_finished: boolean }[]>()
-        data.forEach(m => {
-          if (!matchdayGroups.has(m.matchday)) matchdayGroups.set(m.matchday, [])
-          matchdayGroups.get(m.matchday)!.push(m)
-        })
-
-        // Prüfen ob ein Spieltag Nachholspiele enthält (Zeitspanne > 4 Tage)
-        const hasNachholspiel = (games: { match_date: string }[]) => {
-          const dates = games.map(g => new Date(g.match_date).getTime())
-          const diffDays = (Math.max(...dates) - Math.min(...dates)) / (1000 * 60 * 60 * 24)
-          return diffDays > 4
-        }
-
         const now = new Date()
-        const upcomingMatchdays = [...new Set(
-  data
-    .filter(m => !m.is_finished)
-    .map(m => m.matchday)
-)].sort((a, b) => a - b)
 
-if (upcomingMatchdays.length > 0) {
-  const firstUpcomingMatchday = upcomingMatchdays[0]
-          setSelectedMatchday(firstUpcomingMatchday)
+        // Nächstes Spiel nach Datum finden → dessen Spieltag wählen
+        const nextMatch = data
+          .filter(m => !m.is_finished && new Date(m.match_date) >= now)
+          .sort((a, b) => new Date(a.match_date).getTime() - new Date(b.match_date).getTime())[0]
 
-          // Nachholspiel-Erkennung: Gibt es einen späteren Spieltag mit kommenden Spielen?
-          if (hasNachholspiel(matchdayGroups.get(firstUpcomingMatchday) ?? [])) {
-            const later = uniqueMatchdays.find(md =>
-              md > firstUpcomingMatchday &&
-              (matchdayGroups.get(md) ?? []).some(g => new Date(g.match_date) >= now && !g.is_finished)
-            )
-            if (later) setNextActualMatchday(later)
-          }
+        if (nextMatch) {
+          setSelectedMatchday(nextMatch.matchday)
         } else {
           setSelectedMatchday(uniqueMatchdays[uniqueMatchdays.length - 1] ?? null)
         }
       }
     }
     fetchMatchdays()
-  }, [activeLeague])
+  }, [activeTab, activeLeague])
 
   // ─── Spiele & Stakes laden ────────────────────────────────────────────────────
   useEffect(() => {
-    if (selectedMatchday === null) return
+    if (selectedMatchday === null || activeTab === 'gesamt') return
 
     async function fetchMatchesWithStakes() {
       setLoading(true)
@@ -253,7 +290,7 @@ if (upcomingMatchdays.length > 0) {
     }
 
     fetchMatchesWithStakes()
-  }, [selectedMatchday, activeLeague])
+  }, [selectedMatchday, activeTab, activeLeague])
 
   // ─── API-Quoten client-seitig laden ──────────────────────────────────────────
   const fetchOddsFromAPI = async (matchList: Match[], leagueKey: string) => {
@@ -423,7 +460,9 @@ if (upcomingMatchdays.length > 0) {
   // ─── Stats ────────────────────────────────────────────────────────────────────
   const stats = {
     total: matches.reduce((s, m) => s + m.total_stake, 0),
-    avg: matches.length > 0 ? matches.reduce((s, m) => s + m.total_stake, 0) / matches.length : 0,
+    possibleWin: matches
+      .filter(m => m.bet_total_stake && m.odds && !m.is_finished)
+      .reduce((s, m) => s + (m.bet_total_stake! * m.odds!), 0),
     max: matches.length > 0 ? Math.max(...matches.map(m => m.total_stake)) : 0,
   }
 
@@ -774,9 +813,14 @@ if (upcomingMatchdays.length > 0) {
 
           {/* Bereits getippt */}
           {isAlreadyBet && !hasMatchStarted && (
-            <div className="bg-green-50 border border-green-200 rounded-lg p-2 sm:p-3">
-              <span className="text-xs sm:text-sm text-green-800 font-semibold">✓ Getippt</span>
-            </div>
+            <div className="bg-green-50 border border-green-200 rounded-lg p-2 sm:p-3 flex items-center justify-between">
+				<span className="text-xs sm:text-sm text-green-800 font-semibold">✓ Getippt</span>
+				 {match.bet_total_stake && match.odds && (
+				<span className="text-xs sm:text-sm text-green-800 font-bold">
+				 mögl. Gewinn: {formatCurrency(match.bet_total_stake * match.odds)}
+				</span>
+				)}
+			</div>
           )}
 
           {/* Spiel gestartet */}
@@ -937,8 +981,8 @@ if (upcomingMatchdays.length > 0) {
     )
   }
 
-  // ─── Loading State ────────────────────────────────────────────────────────────
-  if (selectedMatchday === null) {
+  // ─── Loading State (nur Liga-Tabs) ──────────────────────────────────────────
+  if (activeTab !== 'gesamt' && selectedMatchday === null) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
         <Header />
@@ -959,21 +1003,34 @@ if (upcomingMatchdays.length > 0) {
 
       <div className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-6 lg:px-8">
 
-        {/* Liga-Tabs */}
-        <div className="grid grid-cols-6 gap-1 sm:flex sm:gap-1.5 sm:gap-2 mb-4 sm:mb-6 sm:overflow-x-auto pb-1">
+        {/* Tabs: Gesamt + Ligen */}
+        <div className="flex gap-1 sm:gap-1.5 mb-4 sm:mb-6 overflow-x-auto pb-1">
+          {/* Gesamt-Tab */}
+          <button
+            onClick={() => setActiveTab('gesamt')}
+            className={`px-2 sm:px-4 py-2 rounded-lg font-semibold text-[10px] sm:text-sm transition whitespace-nowrap border flex-shrink-0 ${
+              activeTab === 'gesamt'
+                ? 'bg-slate-800 text-white border-slate-800 shadow'
+                : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+            }`}
+          >
+            Gesamt
+          </button>
+
+          {/* Liga-Tabs */}
           {LEAGUES.map(league => {
-            const isActive = activeLeague === league.key
+            const isActive = activeTab === league.key
             const colors = COUNTRY_COLORS[league.key]
             return (
               <button
                 key={league.key}
-                onClick={() => setActiveLeague(league.key)}
+                onClick={() => setActiveTab(league.key)}
                 style={{
                   background: isActive ? colors.active : colors.inactive,
                   borderColor: isActive ? colors.border : '#d1d5db',
                   boxShadow: isActive ? `0 0 0 1px ${colors.border}` : undefined,
                 }}
-                className="px-1 sm:px-4 py-2 rounded-lg font-semibold text-[10px] sm:text-sm transition whitespace-nowrap border text-slate-800 hover:opacity-90"
+                className="px-1 sm:px-4 py-2 rounded-lg font-semibold text-[10px] sm:text-sm transition whitespace-nowrap border text-slate-800 hover:opacity-90 flex-shrink-0"
               >
                 {league.label}
               </button>
@@ -981,107 +1038,178 @@ if (upcomingMatchdays.length > 0) {
           })}
         </div>
 
-        {/* Liga-Name + Spieltag-Navigation */}
-        <div className="flex flex-col sm:flex-row sm:items-end gap-2 sm:gap-3 mb-4 sm:mb-6">
-          <div className="hidden sm:block">
-            <h2 className="text-xl font-bold text-slate-800">{leagueConfig.name}</h2>
-          </div>
-
-          <div className="flex items-end gap-2 flex-1 min-w-0 sm:ml-auto sm:flex-none">
-            <button
-              onClick={goToPreviousMatchday}
-              disabled={isFirstMatchday}
-              className={`p-2 sm:p-3 rounded-lg border transition flex-shrink-0 ${
-                isFirstMatchday
-                  ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
-                  : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
-              }`}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 sm:h-5 sm:w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
-              </svg>
-            </button>
-
-            <div className="flex-1 min-w-0 sm:w-48">
-              <label htmlFor="matchday" className="block text-xs sm:text-sm font-medium text-slate-700 mb-1 sm:mb-2">
-                Spieltag
-              </label>
-              <select
-                id="matchday"
-                value={selectedMatchday}
-                onChange={(e) => setSelectedMatchday(Number(e.target.value))}
-                className="block w-full px-2 sm:px-4 py-2 sm:py-3 bg-white border border-slate-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-slate-800 font-semibold text-xs sm:text-base"
-              >
-                {availableMatchdays.map(day => (
-                  <option key={day} value={day}>{day}. Spieltag</option>
-                ))}
-              </select>
+        {/* ── Gesamt-Tab Inhalt ── */}
+        {activeTab === 'gesamt' ? (
+          gesamtLoading ? (
+            <div className="text-center py-12">
+              <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-slate-600"></div>
+              <p className="mt-2 text-slate-600 text-sm">Lade Wetten...</p>
             </div>
+          ) : gesamtMatches.length === 0 ? (
+            <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 sm:p-8 text-center">
+              <p className="text-slate-500 text-sm">Keine gespeicherten Wetten</p>
+            </div>
+          ) : (
+            <>
+              {/* Gesamt-Statistiken */}
+              <div className="grid grid-cols-2 gap-1.5 sm:gap-2 md:gap-4 mb-4 sm:mb-6">
+                <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-2 sm:p-3 md:p-5">
+                  <div className="text-[10px] sm:text-xs md:text-sm text-slate-600 mb-0.5 sm:mb-1">Einsatz gesamt</div>
+                  <div className="text-sm sm:text-base md:text-2xl font-bold text-slate-800">
+                    {formatCurrency(gesamtMatches.reduce((s, m) => s + (m.bet_total_stake || 0), 0))}
+                  </div>
+                </div>
+                <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-2 sm:p-3 md:p-5">
+                  <div className="text-[10px] sm:text-xs md:text-sm text-slate-600 mb-0.5 sm:mb-1">Möglicher Gewinn</div>
+                  <div className="text-sm sm:text-base md:text-2xl font-bold text-green-700">
+                    {formatCurrency(gesamtMatches
+                      .filter(m => m.bet_total_stake && m.odds)
+                      .reduce((s, m) => s + (m.bet_total_stake! * m.odds!), 0))}
+                  </div>
+                </div>
+              </div>
 
-            <button
-              onClick={goToNextMatchday}
-              disabled={isLastMatchday}
-              className={`p-2 sm:p-3 rounded-lg border transition flex-shrink-0 ${
-                isLastMatchday
-                  ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
-                  : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
-              }`}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 sm:h-5 sm:w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
-              </svg>
-            </button>
-          </div>
-        </div>
-
-        {/* Nachholspiel-Hinweis */}
-        {nextActualMatchday && (
-          <div className="mb-3 sm:mb-4">
-            <button
-              onClick={() => { setSelectedMatchday(nextActualMatchday); setNextActualMatchday(null) }}
-              className="flex items-center gap-2 text-xs sm:text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 hover:bg-amber-100 transition"
-            >
-              <span>⚠️</span>
-              <span>Nachholspiel angezeigt – zum aktuellen Spieltag ({nextActualMatchday}. Spieltag)</span>
-              <span className="ml-auto">→</span>
-            </button>
-          </div>
-        )}
-
-        {loading ? (
-          <div className="text-center py-12">
-            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-            <p className="mt-2 text-slate-600 text-sm">Lade Wetten...</p>
-          </div>
+              {/* Kompakte Spiel-Liste */}
+              <div className="space-y-2">
+                {gesamtMatches.map(match => {
+                  const leagueInfo = LEAGUES.find(l => l.key === match.league_shortcut)
+                  const possibleWin = match.bet_total_stake && match.odds ? match.bet_total_stake * match.odds : null
+                  return (
+                    <div key={match.id} className="bg-white rounded-lg shadow-sm border border-slate-200 p-3 sm:p-4">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+						{leagueInfo && (
+  <div
+    className="w-8 h-8 rounded flex-shrink-0 border"
+    style={{
+      background: COUNTRY_COLORS[leagueInfo.key].active,
+      borderColor: COUNTRY_COLORS[leagueInfo.key].border,
+    }}
+  />
+)}
+                          <div className="min-w-0">
+                            <div className="text-[10px] sm:text-xs text-slate-500 mb-0.5">
+                              {formatDate(match.match_date)} · {leagueInfo?.name} · Spieltag {match.matchday}
+                            </div>
+                            <div className="text-xs sm:text-sm font-semibold text-slate-800 truncate">
+                              {match.home_team.short_name} vs {match.away_team.short_name}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-right flex-shrink-0 space-y-0.5">
+                          <div className="text-xs text-slate-500">
+                            Einsatz: <span className="font-semibold text-slate-700">{formatCurrency(match.bet_total_stake || 0)}</span>
+                          </div>
+                          {match.odds && (
+                            <div className="text-xs text-slate-500">
+                              Quote: <span className="font-semibold text-slate-700">{match.odds.toFixed(2)}</span>
+                            </div>
+                          )}
+                          {possibleWin && (
+                            <div className="text-xs font-bold text-green-700">
+                              Gewinn: {formatCurrency(possibleWin)}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </>
+          )
         ) : (
+          /* ── Liga-Tab Inhalt ── */
           <>
-            {/* Statistiken */}
-            <div className="grid grid-cols-3 gap-1.5 sm:gap-2 md:gap-4 mb-4 sm:mb-6">
-              <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-2 sm:p-3 md:p-5">
-                <div className="text-[10px] sm:text-xs md:text-sm text-slate-600 mb-0.5 sm:mb-1">Gesamt</div>
-                <div className="text-sm sm:text-base md:text-2xl font-bold text-slate-800">{formatCurrency(stats.total)}</div>
+            {/* Liga-Name + Spieltag-Navigation */}
+            <div className="flex flex-col sm:flex-row sm:items-end gap-2 sm:gap-3 mb-4 sm:mb-6">
+              <div className="hidden sm:block">
+                <h2 className="text-xl font-bold text-slate-800">{leagueConfig.name}</h2>
               </div>
-              <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-2 sm:p-3 md:p-5">
-                <div className="text-[10px] sm:text-xs md:text-sm text-slate-600 mb-0.5 sm:mb-1">Ø</div>
-                <div className="text-sm sm:text-base md:text-2xl font-bold text-slate-800">{formatCurrency(stats.avg)}</div>
-              </div>
-              <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-2 sm:p-3 md:p-5">
-                <div className="text-[10px] sm:text-xs md:text-sm text-slate-600 mb-0.5 sm:mb-1">Max</div>
-                <div className="text-sm sm:text-base md:text-2xl font-bold text-slate-800">{formatCurrency(stats.max)}</div>
+
+              <div className="flex items-end gap-2 flex-1 min-w-0 sm:ml-auto sm:flex-none">
+                <button
+                  onClick={goToPreviousMatchday}
+                  disabled={isFirstMatchday}
+                  className={`p-2 sm:p-3 rounded-lg border transition flex-shrink-0 ${
+                    isFirstMatchday
+                      ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
+                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                  }`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 sm:h-5 sm:w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                </button>
+
+                <div className="flex-1 min-w-0 sm:w-48">
+                  <label htmlFor="matchday" className="block text-xs sm:text-sm font-medium text-slate-700 mb-1 sm:mb-2">
+                    Spieltag
+                  </label>
+                  <select
+                    id="matchday"
+                    value={selectedMatchday ?? ''}
+                    onChange={(e) => setSelectedMatchday(Number(e.target.value))}
+                    className="block w-full px-2 sm:px-4 py-2 sm:py-3 bg-white border border-slate-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-slate-800 font-semibold text-xs sm:text-base"
+                  >
+                    {availableMatchdays.map(day => (
+                      <option key={day} value={day}>{day}. Spieltag</option>
+                    ))}
+                  </select>
+                </div>
+
+                <button
+                  onClick={goToNextMatchday}
+                  disabled={isLastMatchday}
+                  className={`p-2 sm:p-3 rounded-lg border transition flex-shrink-0 ${
+                    isLastMatchday
+                      ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
+                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                  }`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 sm:h-5 sm:w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                  </svg>
+                </button>
               </div>
             </div>
 
-            {/* Spiele */}
-            {matches.length > 0 ? (
-              <div className="grid gap-2 sm:gap-3 md:gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                {matches.map(match => (
-                  <BetCard key={match.id} match={match} />
-                ))}
+            {loading ? (
+              <div className="text-center py-12">
+                <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                <p className="mt-2 text-slate-600 text-sm">Lade Wetten...</p>
               </div>
             ) : (
-              <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 sm:p-8 text-center">
-                <p className="text-slate-500 text-sm">Keine Spiele verfügbar</p>
-              </div>
+              <>
+                {/* Statistiken */}
+                <div className="grid grid-cols-3 gap-1.5 sm:gap-2 md:gap-4 mb-4 sm:mb-6">
+                  <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-2 sm:p-3 md:p-5">
+                    <div className="text-[10px] sm:text-xs md:text-sm text-slate-600 mb-0.5 sm:mb-1">Gesamt</div>
+                    <div className="text-sm sm:text-base md:text-2xl font-bold text-slate-800">{formatCurrency(stats.total)}</div>
+                  </div>
+                  <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-2 sm:p-3 md:p-5">
+                    <div className="text-[10px] sm:text-xs md:text-sm text-slate-600 mb-0.5 sm:mb-1">Mög. Gewinn</div>
+                    <div className="text-sm sm:text-base md:text-2xl font-bold text-green-700">{formatCurrency(stats.possibleWin)}</div>
+                  </div>
+                  <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-2 sm:p-3 md:p-5">
+                    <div className="text-[10px] sm:text-xs md:text-sm text-slate-600 mb-0.5 sm:mb-1">Max</div>
+                    <div className="text-sm sm:text-base md:text-2xl font-bold text-slate-800">{formatCurrency(stats.max)}</div>
+                  </div>
+                </div>
+
+                {/* Spiele */}
+                {matches.length > 0 ? (
+                  <div className="grid gap-2 sm:gap-3 md:gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {matches.map(match => (
+                      <BetCard key={match.id} match={match} />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 sm:p-8 text-center">
+                    <p className="text-slate-500 text-sm">Keine Spiele verfügbar</p>
+                  </div>
+                )}
+              </>
             )}
           </>
         )}
