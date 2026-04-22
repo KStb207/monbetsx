@@ -36,6 +36,7 @@ interface LeagueStats {
   openStake: number
   openBetCount: number
   nextMatchday: number
+  possibleWin: number
 }
 
 type AllStats = Record<string, LeagueStats>
@@ -48,6 +49,7 @@ const emptyStats = (): LeagueStats => ({
   openStake: 0,
   openBetCount: 0,
   nextMatchday: 0,
+  possibleWin: 0,
 })
 
 // ─── Hauptkomponente ──────────────────────────────────────────────────────────
@@ -107,6 +109,9 @@ export default function HomePage() {
           if (!statsMap[league]) statsMap[league] = emptyStats()
           statsMap[league].openStake += bet.total_stake || 0
           statsMap[league].openBetCount++
+		  if (bet.total_stake && bet.odds) {
+			statsMap[league].possibleWin += bet.total_stake * bet.odds
+			}
         })
 
         // 3. Nächster Spieltag pro Liga
@@ -181,6 +186,7 @@ export default function HomePage() {
           openStake: acc.openStake + s.openStake,
           openBetCount: acc.openBetCount + s.openBetCount,
           nextMatchday: 0,
+		  possibleWin: acc.possibleWin + s.possibleWin,
         }
       }, emptyStats())
     }
@@ -294,15 +300,7 @@ export default function HomePage() {
               </div>
               <div className="flex justify-between items-center text-sm">
                 <span className="text-slate-500">Möglicher Gewinn</span>
-                <span className="font-semibold text-slate-400">–</span>
-              </div>
-              <div className="border-t border-slate-100 pt-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm font-semibold text-slate-700">Status</span>
-                  <span className="text-sm font-semibold text-blue-600">
-                    {activeStats.openBetCount > 0 ? 'Ausstehend' : 'Keine offenen Wetten'}
-                  </span>
-                </div>
+                <span className="font-semibold text-green-700">{formatCurrency(activeStats.possibleWin)}</span>
               </div>
             </div>
           </div>
