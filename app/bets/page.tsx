@@ -6,12 +6,12 @@ import Header from '@/components/Header'
 
 // ─── Liga-Konfiguration ────────────────────────────────────────────────────────
 const LEAGUES = [
-  { key: 'bl1',     label: '1 BL',    name: '1. Bundesliga',   oddsKey: 'soccer_germany_bundesliga',  season: '2025', color: 'blue',   flag: '🇩🇪' },
-  { key: 'bl2',     label: '2 BL',    name: '2. Bundesliga',   oddsKey: 'soccer_germany_bundesliga2', season: '2025', color: 'slate',  flag: '🇩🇪' },
+  { key: 'bl1',     label: '1. BL',    name: '1. Bundesliga',   oddsKey: 'soccer_germany_bundesliga',  season: '2025', color: 'blue',   flag: '🇩🇪' },
+  { key: 'bl2',     label: '2. BL',    name: '2. Bundesliga',   oddsKey: 'soccer_germany_bundesliga2', season: '2025', color: 'slate',  flag: '🇩🇪' },
   { key: 'epl',     label: 'PL',       name: 'Premier League',  oddsKey: 'soccer_epl',                 season: '2025', color: 'purple', flag: '🏴󠁧󠁢󠁥󠁮󠁧󠁿' },
-  { key: 'la_liga', label: 'LaLiga',  name: 'La Liga',         oddsKey: 'soccer_spain_la_liga',       season: '2025', color: 'red',    flag: '🇪🇸' },
-  { key: 'serie_a', label: 'Ser A',  name: 'Serie A',         oddsKey: 'soccer_italy_serie_a',       season: '2025', color: 'green',  flag: '🇮🇹' },
-  { key: 'ligue_1', label: 'Lig 1',  name: 'Ligue 1',         oddsKey: 'soccer_france_ligue_one',    season: '2025', color: 'indigo', flag: '🇫🇷' },
+  { key: 'la_liga', label: 'La Liga',  name: 'La Liga',         oddsKey: 'soccer_spain_la_liga',       season: '2025', color: 'red',    flag: '🇪🇸' },
+  { key: 'serie_a', label: 'Serie A',  name: 'Serie A',         oddsKey: 'soccer_italy_serie_a',       season: '2025', color: 'green',  flag: '🇮🇹' },
+  { key: 'ligue_1', label: 'Ligue 1',  name: 'Ligue 1',         oddsKey: 'soccer_france_ligue_one',    season: '2025', color: 'indigo', flag: '🇫🇷' },
 ] as const
 
 type LeagueKey = typeof LEAGUES[number]['key']
@@ -248,7 +248,6 @@ export default function BetsPage() {
           away_games_without_draw: calcGamesWithoutDraw(match.away_team_id, match.league_shortcut),
           total_stake: homeStakeData.stake + awayStakeData.stake,
           odds: null,
-          odds_x: null,
           bet_total_stake: null,
           bet_payout: null,
           bet_result: null,
@@ -260,16 +259,13 @@ export default function BetsPage() {
 
       // Keine offenen Spiele → automatisch zum Gesamt-Tab wechseln
       const hasOffen = enriched.some(m => m.home_real_stake > 0 || m.away_real_stake > 0 || m.home_stake > 0 || m.away_stake > 0)
-      if (!hasOffen) {
-        setActiveTab('gesamt')
-        return
-      }
+      if (!hasOffen) setActiveTab('gesamt')
 
-      // Tipico-Quoten je Liga nachladen
+      // Tipico-Quoten je Liga laden (identisch zu Liga-Tabs)
       leaguesPresent.forEach(leagueKey => {
         const leagueConf = LEAGUES.find(l => l.key === leagueKey)
         if (!leagueConf) return
-        const leagueMatches = enriched.filter(m => m.league_shortcut === leagueKey && (m.home_stake > 0 || m.away_stake > 0))
+        const leagueMatches = enriched.filter(m => m.league_shortcut === leagueKey)
         if (leagueMatches.length > 0) fetchOddsFromAPI(leagueMatches, leagueConf.oddsKey)
       })
     }
