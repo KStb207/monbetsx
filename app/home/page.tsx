@@ -7,15 +7,16 @@ import Header from '@/components/Header'
 // ─── Liga-Konfiguration ────────────────────────────────────────────────────────
 const LEAGUES = [
   { key: 'gesamt', label: 'Gesamt',  color: 'orange'  },
-  { key: 'bl1',    label: '1. BL',   color: 'blue'   },
-  { key: 'bl2',    label: '2. BL',   color: 'slate'  },
+  { key: 'bl1',    label: '1 BL',    color: 'blue'   },
+  { key: 'bl2',    label: '2 BL',    color: 'slate'  },
   { key: 'epl',    label: 'PL',      color: 'purple' },
-  { key: 'la_liga',label: 'La Liga', color: 'red'    },
-  { key: 'serie_a',label: 'Serie A', color: 'green'  },
-  { key: 'ligue_1',label: 'Ligue 1', color: 'indigo' },
+  { key: 'la_liga',label: 'LaLiga',  color: 'red'    },
+  { key: 'serie_a',label: 'Ser A',   color: 'green'  },
+  { key: 'ligue_1',label: 'Lig 1',   color: 'indigo' },
 ] as const
 
 type LeagueKey = typeof LEAGUES[number]['key']
+type BetFilter = 'offen' | 'gewonnen' | 'verloren' | 'team'
 
 const COUNTRY_COLORS: Record<string, { active: string; inactive: string; border: string }> = {
   gesamt:  { active: 'linear-gradient(135deg, #334155 0%, #475569 100%)',                                                                                                                                                                              inactive: 'linear-gradient(135deg, rgba(51,65,85,0.08) 0%, rgba(71,85,105,0.08) 100%)',                                                                                                                                                               border: '#475569' },
@@ -39,6 +40,31 @@ interface LeagueStats {
   possibleWin: number
 }
 
+interface BetRecord {
+  id: number
+  match_id: number
+  matchday: number
+  total_stake: number
+  odds: number | null
+  payout: number | null
+  result: string | null
+  is_evaluated: boolean
+  home_team_short: string
+  away_team_short: string
+  home_team_id: number
+  away_team_id: number
+  league_shortcut: string
+  home_goals: number | null
+  away_goals: number | null
+  home_stake: number
+  away_stake: number
+}
+
+interface TeamOption {
+  id: number
+  short_name: string
+}
+
 type AllStats = Record<string, LeagueStats>
 
 const emptyStats = (): LeagueStats => ({
@@ -52,23 +78,33 @@ const emptyStats = (): LeagueStats => ({
   possibleWin: 0,
 })
 
+const PAGE_SIZE = 10
+
 // ─── Hauptkomponente ──────────────────────────────────────────────────────────
 export default function HomePage() {
   const [allStats, setAllStats] = useState<AllStats>({})
   const [loading, setLoading] = useState(true)
   const [activeLeague, setActiveLeague] = useState<LeagueKey>('gesamt')
 
+  // ─── Wettschein-State ─────────────────────────────────────────────────────
+  const [betFilter, setBetFilter] = useState<BetFilter>('offen')
+  const [allBets, setAllBets] = useState<BetRecord[]>([])
+  const [betsLoading, setBetsLoading] = useState(false)
+  const [page, setPage] = useState(0)
+  const [teamOptions, setTeamOptions] = useState<TeamOption[]>([])
+  const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null)
+
+  const formatCurrency = (amount: number) =>
+    new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount)
+
+  // ─── Statistiken laden ────────────────────────────────────────────────────
   useEffect(() => {
     async function fetchData() {
       setLoading(true)
       try {
-        // 1. Abgeschlossene Bets
         const { data: bets } = await supabase
           .from('bets')
-          .select(`
-            *,
-            matches!inner(league_shortcut, is_finished)
-          `)
+          .select(`*, matches!inner(league_shortcut, is_finished)`)
           .eq('matches.is_finished', true)
           .eq('season', '2025')
 
@@ -77,30 +113,22 @@ export default function HomePage() {
         bets?.forEach((bet: any) => {
           const league = bet.matches.league_shortcut
           if (!statsMap[league]) statsMap[league] = emptyStats()
-
           const stake = bet.total_stake || 0
           const payout = bet.payout || 0
-          const evaluated = bet.is_evaluated === true
-
-          if (evaluated) {
+          if (bet.is_evaluated === true) {
             statsMap[league].totalStake += stake
             statsMap[league].totalPayout += payout
             statsMap[league].betCount++
           }
         })
 
-        // Profit berechnen
         Object.keys(statsMap).forEach(k => {
           statsMap[k].profit = statsMap[k].totalPayout - statsMap[k].totalStake
         })
 
-        // 2. Offene Bets (nicht evaluiert)
         const { data: openBets } = await supabase
           .from('bets')
-          .select(`
-            *,
-            matches!inner(league_shortcut, is_finished)
-          `)
+          .select(`*, matches!inner(league_shortcut, is_finished)`)
           .eq('is_evaluated', false)
           .eq('season', '2025')
 
@@ -109,47 +137,21 @@ export default function HomePage() {
           if (!statsMap[league]) statsMap[league] = emptyStats()
           statsMap[league].openStake += bet.total_stake || 0
           statsMap[league].openBetCount++
-		  if (bet.total_stake && bet.odds) {
-			statsMap[league].possibleWin += bet.total_stake * bet.odds
-			}
+          if (bet.total_stake && bet.odds) {
+            statsMap[league].possibleWin += bet.total_stake * bet.odds
+          }
         })
 
-        // 3. Nächster Spieltag pro Liga
         const now = new Date()
         const leagueKeys = ['bl1', 'bl2', 'epl', 'la_liga', 'serie_a', 'ligue_1']
-
         for (const league of leagueKeys) {
           const { data: upcoming } = await supabase
-            .from('matches')
-            .select('matchday')
-            .eq('league_shortcut', league)
-            .eq('season', '2025')
-            .gte('match_date', now.toISOString())
-            .order('match_date', { ascending: true })
-            .limit(1)
-
+            .from('matches').select('matchday').eq('league_shortcut', league)
+            .eq('season', '2025').gte('match_date', now.toISOString())
+            .order('match_date', { ascending: true }).limit(1)
           if (upcoming?.[0]) {
             if (!statsMap[league]) statsMap[league] = emptyStats()
             statsMap[league].nextMatchday = upcoming[0].matchday
-          }
-        }
-
-        // 4. Aktuelle Einsätze (team_stakes) pro Liga
-        for (const league of leagueKeys) {
-          const matchday = statsMap[league]?.nextMatchday
-          if (!matchday) continue
-
-          const { data: stakes } = await supabase
-            .from('team_stakes')
-            .select(`stake, teams!inner(league_shortcut)`)
-            .eq('matchday', matchday)
-            .eq('season', '2025')
-            .eq('teams.league_shortcut', league)
-
-          if (stakes) {
-            if (!statsMap[league]) statsMap[league] = emptyStats()
-            // openStake aus team_stakes nur wenn keine offenen bets
-            // Wir lassen openStake aus bets Tabelle (oben schon gesetzt)
           }
         }
 
@@ -160,23 +162,100 @@ export default function HomePage() {
         setLoading(false)
       }
     }
-
     fetchData()
   }, [])
 
-  const formatCurrency = (amount: number) =>
-    new Intl.NumberFormat('de-DE', {
-      style: 'currency',
-      currency: 'EUR',
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(amount)
+  // ─── Wettscheine laden wenn Liga oder Filter wechselt ────────────────────
+  useEffect(() => {
+    if (activeLeague === 'gesamt') {
+      setAllBets([])
+      setTeamOptions([])
+      setSelectedTeamId(null)
+      return
+    }
 
-  // Gesamt-Stats aggregieren
+    async function fetchBets() {
+      setBetsLoading(true)
+      setPage(0)
+      setSelectedTeamId(null)
+
+      try {
+        // Teams für die Liga laden (für Team-Filter Dropdown)
+        const { data: teams } = await supabase
+          .from('teams')
+          .select('id, short_name')
+          .eq('league_shortcut', activeLeague)
+          .order('short_name', { ascending: true })
+        setTeamOptions(teams || [])
+
+        // Alle Wettscheine der Liga laden
+        const { data: bets } = await supabase
+          .from('bets')
+          .select(`
+            id, match_id, matchday, total_stake, odds, payout, result, is_evaluated,
+            home_stake, away_stake,
+            matches!inner(
+              league_shortcut, is_finished, home_goals, away_goals,
+              home_team:teams!matches_home_team_id_fkey(id, short_name),
+              away_team:teams!matches_away_team_id_fkey(id, short_name)
+            )
+          `)
+          .eq('matches.league_shortcut', activeLeague)
+          .eq('season', '2025')
+          .order('matchday', { ascending: false })
+
+        const mapped: BetRecord[] = (bets || []).map((b: any) => ({
+          id: b.id,
+          match_id: b.match_id,
+          matchday: b.matchday,
+          total_stake: b.total_stake || 0,
+          odds: b.odds,
+          payout: b.payout,
+          result: b.result,
+          is_evaluated: b.is_evaluated,
+          home_team_short: b.matches.home_team?.short_name || '?',
+          away_team_short: b.matches.away_team?.short_name || '?',
+          home_team_id: b.matches.home_team?.id,
+          away_team_id: b.matches.away_team?.id,
+          league_shortcut: b.matches.league_shortcut,
+          home_goals: b.matches.home_goals ?? null,
+          away_goals: b.matches.away_goals ?? null,
+          home_stake: b.home_stake || 0,
+          away_stake: b.away_stake || 0,
+        }))
+
+        setAllBets(mapped)
+      } catch (e) {
+        console.error('Fehler beim Laden der Wettscheine:', e)
+      } finally {
+        setBetsLoading(false)
+      }
+    }
+
+    fetchBets()
+  }, [activeLeague])
+
+  // ─── Filter + Paginierung ────────────────────────────────────────────────
+  const filteredBets = allBets.filter(b => {
+    if (betFilter === 'offen') return !b.is_evaluated
+    if (betFilter === 'gewonnen') return b.is_evaluated && b.result === 'x'
+    if (betFilter === 'verloren') return b.is_evaluated && b.result !== 'x'
+    if (betFilter === 'team' && selectedTeamId) {
+      return b.home_team_id === selectedTeamId || b.away_team_id === selectedTeamId
+    }
+    return true
+  })
+
+  const totalPages = Math.ceil(filteredBets.length / PAGE_SIZE)
+  const pagedBets = filteredBets.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+
+  // ─── Liga/Filter wechsel → Seite zurücksetzen ────────────────────────────
+  useEffect(() => { setPage(0) }, [betFilter, selectedTeamId])
+
+  // ─── Gesamt-Stats ────────────────────────────────────────────────────────
   const getStats = (league: LeagueKey): LeagueStats => {
     if (league === 'gesamt') {
-      const keys = Object.keys(allStats)
-      return keys.reduce((acc, k) => {
+      return Object.keys(allStats).reduce((acc, k) => {
         const s = allStats[k]
         return {
           totalStake: acc.totalStake + s.totalStake,
@@ -186,7 +265,7 @@ export default function HomePage() {
           openStake: acc.openStake + s.openStake,
           openBetCount: acc.openBetCount + s.openBetCount,
           nextMatchday: 0,
-		  possibleWin: acc.possibleWin + s.possibleWin,
+          possibleWin: acc.possibleWin + s.possibleWin,
         }
       }, emptyStats())
     }
@@ -217,7 +296,7 @@ export default function HomePage() {
       <div className="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
         <h1 className="text-2xl font-bold text-slate-800 mb-5">Übersicht</h1>
 
-        {/* Liga-Tabs */}
+        {/* ── Liga-Tabs ────────────────────────────────────────────────────── */}
         <div className="grid grid-cols-7 gap-1 mb-6">
           {LEAGUES.map(league => {
             const isActive = activeLeague === league.key
@@ -239,7 +318,7 @@ export default function HomePage() {
           })}
         </div>
 
-        {/* Spieltag Badge (nicht bei Gesamt) */}
+        {/* Spieltag Badge */}
         {activeLeague !== 'gesamt' && activeStats.nextMatchday > 0 && (
           <div className="mb-4">
             <span
@@ -251,9 +330,8 @@ export default function HomePage() {
           </div>
         )}
 
+        {/* ── Statistik-Karten ─────────────────────────────────────────────── */}
         <div className="grid gap-4 md:grid-cols-2">
-
-          {/* ── Abgeschlossene Wetten ──────────────────────────────────────── */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
             <div className="flex items-center gap-2 mb-4">
               <div className="w-2 h-2 rounded-full bg-slate-400"></div>
@@ -262,7 +340,6 @@ export default function HomePage() {
                 {activeStats.betCount} Wetten
               </span>
             </div>
-
             <div className="space-y-3">
               <div className="flex justify-between items-center text-sm">
                 <span className="text-slate-500">Gesamteinsatz</span>
@@ -283,7 +360,6 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* ── Offene Wetten ──────────────────────────────────────────────── */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
             <div className="flex items-center gap-2 mb-4">
               <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
@@ -292,7 +368,6 @@ export default function HomePage() {
                 {activeStats.openBetCount} Wetten
               </span>
             </div>
-
             <div className="space-y-3">
               <div className="flex justify-between items-center text-sm">
                 <span className="text-slate-500">Ausstehender Einsatz</span>
@@ -304,10 +379,9 @@ export default function HomePage() {
               </div>
             </div>
           </div>
-
         </div>
 
-        {/* ── Gesamtprofit Banner ────────────────────────────────────────────── */}
+        {/* ── Gesamtprofit Banner ───────────────────────────────────────────── */}
         <div className="mt-4 bg-white rounded-xl shadow-sm border border-slate-200 p-5">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
@@ -326,13 +400,166 @@ export default function HomePage() {
               </div>
               <div>
                 <span className="block text-xs text-slate-400">Offen</span>
-                <span className="font-semibold text-blue-600">
-                  -{formatCurrency(activeStats.openStake)}
-                </span>
+                <span className="font-semibold text-blue-600">-{formatCurrency(activeStats.openStake)}</span>
               </div>
             </div>
           </div>
         </div>
+
+        {/* ── Wettscheine (nur bei Liga-Auswahl) ───────────────────────────── */}
+        {activeLeague !== 'gesamt' && (
+          <div className="mt-6">
+            <h2 className="text-base font-bold text-slate-800 mb-3">Wettscheine</h2>
+
+            {/* Filter-Tabs */}
+            <div className="flex flex-wrap items-center gap-2 mb-4">
+              {(['offen', 'gewonnen', 'verloren', 'team'] as BetFilter[]).map(f => (
+                <button
+                  key={f}
+                  onClick={() => setBetFilter(f)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition border ${
+                    betFilter === f
+                      ? 'bg-slate-800 text-white border-slate-800'
+                      : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
+                  }`}
+                >
+                  {f.charAt(0).toUpperCase() + f.slice(1)}
+                </button>
+              ))}
+
+              {/* Team-Dropdown */}
+              {betFilter === 'team' && (
+                <select
+                  value={selectedTeamId ?? ''}
+                  onChange={e => setSelectedTeamId(e.target.value ? Number(e.target.value) : null)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-300 bg-white text-slate-700 focus:ring-2 focus:ring-blue-500 outline-none"
+                >
+                  <option value="">Team wählen...</option>
+                  {teamOptions.map(t => (
+                    <option key={t.id} value={t.id}>{t.short_name}</option>
+                  ))}
+                </select>
+              )}
+
+              <span className="ml-auto text-xs text-slate-400">
+                {filteredBets.length} Einträge
+              </span>
+            </div>
+
+            {/* Wettschein-Liste */}
+            {betsLoading ? (
+              <div className="text-center py-8">
+                <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-slate-600"></div>
+              </div>
+            ) : pagedBets.length === 0 ? (
+              <div className="bg-white rounded-lg border border-slate-200 p-6 text-center text-sm text-slate-400">
+                Keine Einträge gefunden
+              </div>
+            ) : (
+              <>
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                  {/* Header */}
+                  <div className="grid grid-cols-5 gap-2 px-4 py-2 bg-slate-50 border-b border-slate-200 text-[10px] sm:text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                    <div className="col-span-2">Spiel</div>
+                    <div className="text-center">Spieltag</div>
+                    <div className="text-right">Einsatz</div>
+                    <div className="text-right">Quote / Gewinn</div>
+                  </div>
+
+                  {/* Zeilen */}
+                  {pagedBets.map((bet, idx) => {
+                    const won = bet.is_evaluated && bet.result === 'x'
+                    const lost = bet.is_evaluated && bet.result !== 'x'
+                    const open = !bet.is_evaluated
+                    return (
+                      <div
+                        key={bet.id}
+                        className={`grid grid-cols-5 gap-2 px-4 py-3 text-xs sm:text-sm items-center ${
+                          idx < pagedBets.length - 1 ? 'border-b border-slate-100' : ''
+                        } ${won ? 'bg-green-50' : lost ? 'bg-red-50' : ''}`}
+                      >
+                        {/* Spiel */}
+                        <div className="col-span-2 leading-tight">
+                          <div className="flex items-center gap-1 flex-wrap">
+                            <span className={`text-slate-800 ${bet.home_stake > 0 ? 'font-bold' : 'font-medium'}`}>
+                              {bet.home_team_short}
+                            </span>
+                            {bet.home_goals !== null && bet.away_goals !== null ? (
+                              <span className="text-slate-500 font-semibold tabular-nums">
+                                {bet.home_goals}:{bet.away_goals}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400">vs</span>
+                            )}
+                            <span className={`text-slate-800 ${bet.away_stake > 0 ? 'font-bold' : 'font-medium'}`}>
+                              {bet.away_team_short}
+                            </span>
+                          </div>
+                          <div className="mt-0.5">
+                            {open && <span className="text-[10px] text-blue-600 font-semibold">Offen</span>}
+                            {won && <span className="text-[10px] text-green-700 font-semibold">✓ Gewonnen</span>}
+                            {lost && <span className="text-[10px] text-red-600 font-semibold">✗ Verloren</span>}
+                          </div>
+                        </div>
+
+                        {/* Spieltag */}
+                        <div className="text-center text-slate-500">{bet.matchday}.</div>
+
+                        {/* Einsatz */}
+                        <div className="text-right font-semibold text-slate-700">
+                          {formatCurrency(bet.total_stake)}
+                        </div>
+
+                        {/* Quote / Gewinn */}
+                        <div className="text-right">
+                          <div className="text-slate-600">{bet.odds ? bet.odds.toFixed(2) : '–'}</div>
+                          {won && bet.payout ? (
+                            <div className="font-bold text-green-700">{formatCurrency(bet.payout)}</div>
+                          ) : open && bet.odds ? (
+                            <div className="text-blue-600">{formatCurrency(bet.total_stake * bet.odds)}</div>
+                          ) : (
+                            <div className="text-slate-400">–</div>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {/* Paginierung */}
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between mt-3">
+                    <button
+                      onClick={() => setPage(p => Math.max(0, p - 1))}
+                      disabled={page === 0}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${
+                        page === 0
+                          ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
+                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      ← Zurück
+                    </button>
+                    <span className="text-xs text-slate-500">
+                      Seite {page + 1} von {totalPages}
+                    </span>
+                    <button
+                      onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+                      disabled={page >= totalPages - 1}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${
+                        page >= totalPages - 1
+                          ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
+                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      Weiter →
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
 
       </div>
     </div>
