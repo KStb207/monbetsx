@@ -79,11 +79,11 @@ interface ApiOdds {
   away: number | null
 }
 
-type ActiveTab = 'gesamt' | LeagueKey
+type ActiveTab = 'gesamt' | 'offen' | LeagueKey
 
 // ─── Hauptkomponente ──────────────────────────────────────────────────────────
 export default function BetsPage() {
-  const [activeTab, setActiveTab] = useState<ActiveTab>('gesamt')
+  const [activeTab, setActiveTab] = useState<ActiveTab>('offen')
   const activeLeague = (activeTab !== 'gesamt' ? activeTab : 'bl1') as LeagueKey
   const [selectedMatchday, setSelectedMatchday] = useState<number | null>(null)
   const [matches, setMatches] = useState<Match[]>([])
@@ -103,6 +103,10 @@ export default function BetsPage() {
   // ─── Gesamt-Tab State ─────────────────────────────────────────────────────────
   const [gesamtMatches, setGesamtMatches] = useState<Match[]>([])
   const [gesamtLoading, setGesamtLoading] = useState(true)
+
+  // ─── Offen-Tab State ──────────────────────────────────────────────────────────
+  const [offenMatches, setOffenMatches] = useState<Match[]>([])
+  const [offenLoading, setOffenLoading] = useState(false)
 
   const leagueConfig = LEAGUES.find(l => l.key === activeLeague) ?? LEAGUES[0]
 
@@ -158,9 +162,124 @@ export default function BetsPage() {
     fetchGesamtMatches()
   }, [activeTab])
 
+  // ─── Offen-Tab: Spiele laden mit Tipico-Quoten und games_without_draw ─────────
+  useEffect(() => {
+    if (activeTab !== 'offen') return
+
+    async function fetchOffenMatches() {
+      setOffenLoading(true)
+
+      const now = new Date().toISOString()
+
+      // Alle zukünftigen unbeendeten Spiele laden
+      const { data: allUpcoming } = await supabase
+        .from('matches')
+        .select(`*, home_team:teams!matches_home_team_id_fkey(id, name, short_name, odds_api_id, table_position), away_team:teams!matches_away_team_id_fkey(id, name, short_name, odds_api_id, table_position)`)
+        .eq('is_finished', false)
+        .gt('match_date', now)
+        .order('match_date', { ascending: true })
+
+      if (!allUpcoming?.length) {
+        setOffenMatches([])
+        setOffenLoading(false)
+        return
+      }
+
+      // Nächsten Spieltag pro Liga bestimmen
+      const nextMatchdayPerLeague = new Map<string, number>()
+      LEAGUES.forEach(league => {
+        const first = allUpcoming.find(m => m.league_shortcut === league.key)
+        if (first) nextMatchdayPerLeague.set(league.key, first.matchday)
+      })
+
+      // Nur den nächsten Spieltag je Liga betrachten
+      const relevantMatches = allUpcoming.filter(m => {
+        const nextMd = nextMatchdayPerLeague.get(m.league_shortcut)
+        return nextMd !== undefined && m.matchday === nextMd
+      })
+
+      // Bereits gesetzte Wetten ausschließen
+      const matchIds = relevantMatches.map(m => m.id)
+      const { data: betsData } = await supabase
+        .from('bets').select('match_id, odds').in('match_id', matchIds).not('odds', 'is', null)
+      const bettedMatchIds = new Set(betsData?.map(b => b.match_id) || [])
+      const unbetted = relevantMatches.filter(m => !bettedMatchIds.has(m.id))
+
+      // Team-Einsätze laden
+      const teamIds = [...new Set([...unbetted.map(m => m.home_team_id), ...unbetted.map(m => m.away_team_id)])]
+      const { data: allStakes } = await supabase
+        .from('team_stakes').select('team_id, stake, real_stake, matchday, season').in('team_id', teamIds)
+      const stakesMap = new Map(allStakes?.map(s => [`${s.team_id}-${s.matchday}-${s.season}`, { stake: s.stake, real_stake: s.real_stake || 0 }]) || [])
+
+      // Historische Spieltage je Liga für games_without_draw laden
+      const leaguesPresent = [...new Set(unbetted.map(m => m.league_shortcut))]
+      const historicalByLeague = new Map<string, any[]>()
+      await Promise.all(leaguesPresent.map(async leagueKey => {
+        const season = LEAGUES.find(l => l.key === leagueKey)?.season ?? '2025'
+        const { data } = await supabase.from('matches').select('*').eq('league_shortcut', leagueKey).eq('season', season).order('matchday', { ascending: true })
+        if (data) historicalByLeague.set(leagueKey, data)
+      }))
+
+      const calcGamesWithoutDraw = (teamId: number, leagueKey: string): number => {
+        const all = historicalByLeague.get(leagueKey) || []
+        const maxMd = all.filter(m => m.is_finished).reduce((max, m) => Math.max(max, m.matchday), 0)
+        let count = 0
+        for (let md = maxMd; md >= 1; md--) {
+          const m = all.find(x => x.matchday === md && x.is_finished && (x.home_team_id === teamId || x.away_team_id === teamId))
+          if (!m) continue
+          if (m.result === 'x') break
+          count++
+        }
+        return count
+      }
+
+      // Matches anreichern (inkl. Spiele ohne Einsatz für "Neue Teams"-Sektion)
+      const enriched: Match[] = unbetted.map(match => {
+        const leagueSeason = LEAGUES.find(l => l.key === match.league_shortcut)?.season ?? '2025'
+        const homeStakeData = stakesMap.get(`${match.home_team_id}-${match.matchday}-${leagueSeason}`) || { stake: 0, real_stake: 0 }
+        const awayStakeData = stakesMap.get(`${match.away_team_id}-${match.matchday}-${leagueSeason}`) || { stake: 0, real_stake: 0 }
+        return {
+          ...match,
+          home_stake: homeStakeData.stake,
+          away_stake: awayStakeData.stake,
+          home_real_stake: homeStakeData.real_stake,
+          away_real_stake: awayStakeData.real_stake,
+          home_games_without_draw: calcGamesWithoutDraw(match.home_team_id, match.league_shortcut),
+          away_games_without_draw: calcGamesWithoutDraw(match.away_team_id, match.league_shortcut),
+          total_stake: homeStakeData.stake + awayStakeData.stake,
+          odds: null,
+          odds_x: null,
+          bet_total_stake: null,
+          bet_payout: null,
+          bet_result: null,
+        }
+      })
+
+      setOffenMatches(enriched)
+      setOffenLoading(false)
+
+      // Keine offenen Spiele → automatisch zum Gesamt-Tab wechseln
+      const hasOffen = enriched.some(m => m.home_real_stake > 0 || m.away_real_stake > 0 || m.home_stake > 0 || m.away_stake > 0)
+      if (!hasOffen) {
+        setActiveTab('gesamt')
+        return
+      }
+
+      // Tipico-Quoten je Liga nachladen
+      leaguesPresent.forEach(leagueKey => {
+        const leagueConf = LEAGUES.find(l => l.key === leagueKey)
+        if (!leagueConf) return
+        const leagueMatches = enriched.filter(m => m.league_shortcut === leagueKey && (m.home_stake > 0 || m.away_stake > 0))
+        if (leagueMatches.length > 0) fetchOddsFromAPI(leagueMatches, leagueConf.oddsKey)
+      })
+    }
+
+    fetchOffenMatches()
+  }, [activeTab])
+
   // ─── Beim Liga-Wechsel: Matchdays neu laden ──────────────────────────────────
   useEffect(() => {
-    if (activeTab === 'gesamt') return
+    if (activeTab === 'gesamt' || activeTab === 'offen') return
 
     setSelectedMatchday(null)
     setMatches([])
@@ -198,7 +317,7 @@ export default function BetsPage() {
 
   // ─── Spiele & Stakes laden ────────────────────────────────────────────────────
   useEffect(() => {
-    if (selectedMatchday === null || activeTab === 'gesamt') return
+    if (selectedMatchday === null || activeTab === 'gesamt' || activeTab === 'offen') return
 
     async function fetchMatchesWithStakes() {
       setLoading(true)
@@ -369,17 +488,18 @@ export default function BetsPage() {
   const handleSaveOdds = async (matchId: number, quote: number, match: Match, homeStake?: number, awayStake?: number) => {
     setSavingMatchId(matchId)
     try {
-      // Berechne home_stake und away_stake
       let finalHomeStake = homeStake ?? 0
       let finalAwayStake = awayStake ?? 0
-      
-      // total_stake = home_stake + away_stake
       const totalStake = finalHomeStake + finalAwayStake
+
+      // Matchday & Season aus dem Match-Objekt ableiten (funktioniert in allen Tabs)
+      const matchday = match.matchday ?? selectedMatchday
+      const season = LEAGUES.find(l => l.key === match.league_shortcut)?.season ?? leagueConfig.season
       
       const { error } = await supabase.from('bets').upsert({
         match_id: matchId,
-        matchday: selectedMatchday,
-        season: leagueConfig.season,
+        matchday,
+        season,
         odds: quote,
         home_stake: finalHomeStake,
         away_stake: finalAwayStake,
@@ -388,13 +508,10 @@ export default function BetsPage() {
 
       if (error) throw error
 
-      setMatches(prev => prev.map(m => m.id === matchId ? { 
-        ...m, 
-        odds: quote, 
-        bet_total_stake: totalStake 
-      } : m))
+      setMatches(prev => prev.map(m => m.id === matchId ? { ...m, odds: quote, bet_total_stake: totalStake } : m))
+      // Im Offen-Tab: gespeichertes Spiel aus der Liste entfernen
+      setOffenMatches(prev => prev.filter(m => m.id !== matchId))
 
-      // Alternative Stake Check (wenn über 250€)
       if (finalHomeStake > 250 || finalAwayStake > 250) {
         const alternative = calculateAlternativeStake(totalStake, quote)
         setAlternativeStakes(prev => new Map(prev).set(matchId, {
@@ -423,7 +540,7 @@ export default function BetsPage() {
   const handleReduceStake = async (matchId: number, teamToReduce: 'home' | 'away') => {
     const alternative = alternativeStakes.get(matchId)
     if (!alternative) return
-    const match = matches.find(m => m.id === matchId)
+    const match = matches.find(m => m.id === matchId) ?? offenMatches.find(m => m.id === matchId)
     if (!match) return
 
     const teamId = teamToReduce === 'home' ? match.home_team_id : match.away_team_id
@@ -432,21 +549,25 @@ export default function BetsPage() {
 
     if (newStake < 0) { alert('Fehler: Berechneter Einsatz ist negativ!'); return }
 
+    const matchSeason = LEAGUES.find(l => l.key === match.league_shortcut)?.season ?? leagueConfig.season
+
     try {
       const { error } = await supabase.from('team_stakes')
         .update({ stake: newStake })
         .eq('team_id', teamId)
-        .eq('matchday', selectedMatchday)
-        .eq('season', leagueConfig.season)
+        .eq('matchday', match.matchday)
+        .eq('season', matchSeason)
 
       if (error) throw error
 
-      setMatches(prev => prev.map(m => {
+      const updater = (m: Match) => {
         if (m.id !== matchId) return m
         return teamToReduce === 'home'
           ? { ...m, home_stake: newStake, total_stake: newStake + m.away_stake }
           : { ...m, away_stake: newStake, total_stake: m.home_stake + newStake }
-      }))
+      }
+      setMatches(prev => prev.map(updater))
+      setOffenMatches(prev => prev.map(updater))
 
       setAlternativeStakes(prev => { const nm = new Map(prev); nm.delete(matchId); return nm })
       setShowModal(false)
@@ -467,7 +588,7 @@ export default function BetsPage() {
   }
 
   // ─── BetCard ──────────────────────────────────────────────────────────────────
-  const BetCard = ({ match }: { match: Match }) => {
+  const BetCard = ({ match, showLeagueFlag = false }: { match: Match; showLeagueFlag?: boolean }) => {
     const matchApiOdds = apiOdds.get(match.id)
     const effectiveOddsX = match.odds_x ?? matchApiOdds?.draw ?? null
 
@@ -560,7 +681,16 @@ export default function BetsPage() {
           <div className="p-3 sm:p-4">
             {/* Header */}
             <div className="flex items-center justify-between mb-2 sm:mb-3 pb-2 border-b border-slate-100">
-              <div className="text-xs text-slate-500">
+              <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                {showLeagueFlag && (() => {
+                  const lInfo = LEAGUES.find(l => l.key === match.league_shortcut)
+                  return lInfo ? (
+                    <div
+                      className="w-5 h-5 rounded flex-shrink-0 border"
+                      style={{ background: COUNTRY_COLORS[lInfo.key].active, borderColor: COUNTRY_COLORS[lInfo.key].border }}
+                    />
+                  ) : null
+                })()}
                 {match.is_finished ? (
                   <>{formatDate(match.match_date)}</>
                 ) : hasMatchStarted ? (
@@ -982,7 +1112,7 @@ export default function BetsPage() {
   }
 
   // ─── Loading State (nur Liga-Tabs) ──────────────────────────────────────────
-  if (activeTab !== 'gesamt' && selectedMatchday === null) {
+  if (activeTab !== 'gesamt' && activeTab !== 'offen' && selectedMatchday === null) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
         <Header />
@@ -1003,8 +1133,9 @@ export default function BetsPage() {
 
       <div className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-6 lg:px-8">
 
-        {/* Tabs: Gesamt + Ligen */}
-        <div className="flex gap-1 sm:gap-1.5 mb-4 sm:mb-6 overflow-x-auto pb-1">
+        {/* Tabs: Gesamt + Offen + Ligen – sticky beim Scrollen */}
+        <div className="sticky top-0 z-20 bg-slate-50/95 backdrop-blur-sm -mx-3 sm:-mx-4 lg:-mx-8 px-3 sm:px-4 lg:px-8 pt-2 pb-2 mb-4 sm:mb-6 border-b border-slate-200/60 shadow-sm">
+          <div className="flex gap-1 sm:gap-1.5 overflow-x-auto pb-0.5">
           {/* Gesamt-Tab */}
           <button
             onClick={() => setActiveTab('gesamt')}
@@ -1017,7 +1148,17 @@ export default function BetsPage() {
             Gesamt
           </button>
 
-          {/* Liga-Tabs */}
+          {/* Offen-Tab */}
+          <button
+            onClick={() => setActiveTab('offen')}
+            className={`px-2 sm:px-4 py-2 rounded-lg font-semibold text-[10px] sm:text-sm transition whitespace-nowrap border flex-shrink-0 ${
+              activeTab === 'offen'
+                ? 'bg-amber-500 text-white border-amber-500 shadow'
+                : 'bg-white text-amber-700 border-amber-300 hover:bg-amber-50'
+            }`}
+          >
+            Offen{(() => { const n = offenMatches.filter(m => m.home_real_stake > 0 || m.away_real_stake > 0).length; return n > 0 && activeTab !== 'offen' ? ` (${n})` : '' })()}
+          </button>
           {LEAGUES.map(league => {
             const isActive = activeTab === league.key
             const colors = COUNTRY_COLORS[league.key]
@@ -1036,10 +1177,62 @@ export default function BetsPage() {
               </button>
             )
           })}
+          </div>
         </div>
 
-        {/* ── Gesamt-Tab Inhalt ── */}
-        {activeTab === 'gesamt' ? (
+        {/* ── Offen-Tab Inhalt ── */}
+        {activeTab === 'offen' ? (
+          offenLoading ? (
+            <div className="text-center py-12">
+              <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-amber-500"></div>
+              <p className="mt-2 text-slate-600 text-sm">Lade offene Wetten...</p>
+            </div>
+          ) : (() => {
+            const mitEinsatz = offenMatches.filter(m => m.home_real_stake > 0 || m.away_real_stake > 0)
+            const neueTeams = offenMatches.filter(m => (m.home_stake > 0 || m.away_stake > 0) && m.home_real_stake === 0 && m.away_real_stake === 0)
+            if (mitEinsatz.length === 0 && neueTeams.length === 0) {
+              return (
+                <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 sm:p-8 text-center">
+                  <p className="text-slate-500 text-sm">Keine offenen Wetten – alle Einsätze sind bereits gesetzt.</p>
+                </div>
+              )
+            }
+            return (
+              <>
+                {/* Sektion 1: Spiele mit Einsatz (bereits im System) */}
+                {mitEinsatz.length > 0 && (
+                  <>
+                    <div className="text-xs sm:text-sm text-slate-500 mb-3">
+                      {mitEinsatz.length} {mitEinsatz.length === 1 ? 'Spiel' : 'Spiele'} – Einsatz wird verdoppelt
+                    </div>
+                    <div className="grid gap-2 sm:gap-3 md:gap-4 sm:grid-cols-2 lg:grid-cols-3 mb-6">
+                      {mitEinsatz.map(match => (
+                        <BetCard key={match.id} match={match} showLeagueFlag={true} />
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {/* Sektion 2: Neue Teams */}
+                {neueTeams.length > 0 && (
+                  <>
+                    <div className="flex items-center gap-3 my-4 sm:my-6">
+                      <div className="flex-1 h-px bg-slate-300" />
+                      <span className="text-sm sm:text-base font-bold text-slate-600 whitespace-nowrap">Neue Teams:</span>
+                      <div className="flex-1 h-px bg-slate-300" />
+                    </div>
+                    <div className="grid gap-2 sm:gap-3 md:gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                      {neueTeams.map(match => (
+                        <BetCard key={match.id} match={match} showLeagueFlag={true} />
+                      ))}
+                    </div>
+                  </>
+                )}
+              </>
+            )
+          })()
+        ) : activeTab === 'gesamt' ? (
+        /* ── Gesamt-Tab Inhalt ── */
           gesamtLoading ? (
             <div className="text-center py-12">
               <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-slate-600"></div>
