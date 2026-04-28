@@ -6,12 +6,12 @@ import Header from '@/components/Header'
 
 // ─── Liga-Konfiguration ────────────────────────────────────────────────────────
 const LEAGUES = [
-  { key: 'bl1',     label: '1 BL',    name: '1. Bundesliga',   oddsKey: 'soccer_germany_bundesliga',  season: '2025', color: 'blue',   flag: '🇩🇪' },
-  { key: 'bl2',     label: '2 BL',    name: '2. Bundesliga',   oddsKey: 'soccer_germany_bundesliga2', season: '2025', color: 'slate',  flag: '🇩🇪' },
-  { key: 'epl',     label: 'PL',       name: 'Premier League',  oddsKey: 'soccer_epl',                 season: '2025', color: 'purple', flag: '🏴󠁧󠁢󠁥󠁮󠁧󠁿' },
-  { key: 'la_liga', label: 'LaLiga',  name: 'La Liga',         oddsKey: 'soccer_spain_la_liga',       season: '2025', color: 'red',    flag: '🇪🇸' },
-  { key: 'serie_a', label: 'Ser A',  name: 'Serie A',         oddsKey: 'soccer_italy_serie_a',       season: '2025', color: 'green',  flag: '🇮🇹' },
-  { key: 'ligue_1', label: 'Lig 1',  name: 'Ligue 1',         oddsKey: 'soccer_france_ligue_one',    season: '2025', color: 'indigo', flag: '🇫🇷' },
+  { key: 'bl1',     label: '1 BL',    name: '1. Bundesliga',   oddsKey: 'soccer_germany_bundesliga',  season: '2025', color: 'blue',   flag: '🇩🇪', totalMatchdays: 34 },
+  { key: 'bl2',     label: '2 BL',    name: '2. Bundesliga',   oddsKey: 'soccer_germany_bundesliga2', season: '2025', color: 'slate',  flag: '🇩🇪', totalMatchdays: 34 },
+  { key: 'epl',     label: 'PL',      name: 'Premier League',  oddsKey: 'soccer_epl',                 season: '2025', color: 'purple', flag: '🏴󠁧󠁢󠁥󠁮󠁧󠁿', totalMatchdays: 38 },
+  { key: 'la_liga', label: 'LaLiga',  name: 'La Liga',         oddsKey: 'soccer_spain_la_liga',       season: '2025', color: 'red',    flag: '🇪🇸', totalMatchdays: 38 },
+  { key: 'serie_a', label: 'Ser A',   name: 'Serie A',         oddsKey: 'soccer_italy_serie_a',       season: '2025', color: 'green',  flag: '🇮🇹', totalMatchdays: 38 },
+  { key: 'ligue_1', label: 'Lig 1',   name: 'Ligue 1',         oddsKey: 'soccer_france_ligue_one',    season: '2025', color: 'indigo', flag: '🇫🇷', totalMatchdays: 38 },
 ] as const
 
 type LeagueKey = typeof LEAGUES[number]['key']
@@ -588,6 +588,10 @@ export default function BetsPage() {
     const matchApiOdds = apiOdds.get(match.id)
     const effectiveOddsX = match.odds_x ?? matchApiOdds?.draw ?? null
 
+    const leagueInfo = LEAGUES.find(l => l.key === match.league_shortcut)
+    const matchdaysRemaining = leagueInfo ? leagueInfo.totalMatchdays - match.matchday + 1 : null
+    const showEndWarning = matchdaysRemaining !== null && matchdaysRemaining >= 0 && matchdaysRemaining <= 5 && !match.is_finished
+
     const [oddsInput, setOddsInput] = useState<string>(effectiveOddsX?.toString() || '')
     const [homeStakeInput, setHomeStakeInput] = useState<string>(
       match.home_real_stake > 0 ? match.home_real_stake.toString() : (match.home_stake > 0 ? match.home_stake.toString() : '')
@@ -695,7 +699,12 @@ export default function BetsPage() {
                   <span>{formatDate(match.match_date)}</span>
                 )}
               </div>
-              <div className="text-xs font-semibold text-slate-600">
+              <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                {showEndWarning && (
+                  <span className="text-slate-500">
+                    {matchdaysRemaining} Spiele bis Ende
+                  </span>
+                )}
                 {match.is_finished ? (
                   <span className="px-2 py-1 bg-slate-100 rounded-full">Beendet</span>
                 ) : canCollapse && isExpanded ? (
