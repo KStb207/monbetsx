@@ -6,12 +6,12 @@ import Header from '@/components/Header'
 
 // ─── Liga-Konfiguration ────────────────────────────────────────────────────────
 const LEAGUES = [
-  { key: 'bl1',     label: '1. BL',    name: '1. Bundesliga',   oddsKey: 'soccer_germany_bundesliga',  season: '2025', color: 'blue',   flag: '🇩🇪' },
-  { key: 'bl2',     label: '2. BL',    name: '2. Bundesliga',   oddsKey: 'soccer_germany_bundesliga2', season: '2025', color: 'slate',  flag: '🇩🇪' },
+  { key: 'bl1',     label: '1 BL',    name: '1. Bundesliga',   oddsKey: 'soccer_germany_bundesliga',  season: '2025', color: 'blue',   flag: '🇩🇪' },
+  { key: 'bl2',     label: '2 BL',    name: '2. Bundesliga',   oddsKey: 'soccer_germany_bundesliga2', season: '2025', color: 'slate',  flag: '🇩🇪' },
   { key: 'epl',     label: 'PL',       name: 'Premier League',  oddsKey: 'soccer_epl',                 season: '2025', color: 'purple', flag: '🏴󠁧󠁢󠁥󠁮󠁧󠁿' },
-  { key: 'la_liga', label: 'La Liga',  name: 'La Liga',         oddsKey: 'soccer_spain_la_liga',       season: '2025', color: 'red',    flag: '🇪🇸' },
-  { key: 'serie_a', label: 'Serie A',  name: 'Serie A',         oddsKey: 'soccer_italy_serie_a',       season: '2025', color: 'green',  flag: '🇮🇹' },
-  { key: 'ligue_1', label: 'Ligue 1',  name: 'Ligue 1',         oddsKey: 'soccer_france_ligue_one',    season: '2025', color: 'indigo', flag: '🇫🇷' },
+  { key: 'la_liga', label: 'LaLiga',  name: 'La Liga',         oddsKey: 'soccer_spain_la_liga',       season: '2025', color: 'red',    flag: '🇪🇸' },
+  { key: 'serie_a', label: 'Ser A',  name: 'Serie A',         oddsKey: 'soccer_italy_serie_a',       season: '2025', color: 'green',  flag: '🇮🇹' },
+  { key: 'ligue_1', label: 'Lig 1',  name: 'Ligue 1',         oddsKey: 'soccer_france_ligue_one',    season: '2025', color: 'indigo', flag: '🇫🇷' },
 ] as const
 
 type LeagueKey = typeof LEAGUES[number]['key']
