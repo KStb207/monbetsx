@@ -104,12 +104,16 @@ export default function TeamsPage() {
   const [inputValues, setInputValues] = useState<Record<number, string>>({})
   const [originalValues, setOriginalValues] = useState<Record<number, number>>({})
 
+  // ─── "Für alle Teams"-State ────────────────────────────────────────────────
+  const [allTeamsValue, setAllTeamsValue] = useState('')
+
   const leagueConfig = LEAGUES.find(l => l.key === activeLeague)!
 
   // ─── Daten laden wenn Liga wechselt ──────────────────────────────────────────
   useEffect(() => {
     setTeamStats([])
     setLoading(true)
+    setAllTeamsValue('')
 
     async function fetchTeamsData() {
       try {
@@ -168,7 +172,20 @@ export default function TeamsPage() {
     setInputValues(prev => ({ ...prev, [teamId]: value }))
   }, [])
 
-  // ─── Speichern ────────────────────────────────────────────────────────────────
+  // ─── Für alle Teams: Wert in alle Felder eintragen ───────────────────────────
+  const handleApplyToAllTeams = () => {
+    const num = parseInt(allTeamsValue)
+    if (isNaN(num) || num < 0 || num > 34) return
+
+    const newInputs: Record<number, string> = {}
+    Object.keys(inputValues).forEach(id => {
+      newInputs[parseInt(id)] = allTeamsValue
+    })
+    setInputValues(newInputs)
+    setAllTeamsValue('')
+  }
+
+  // ─── Einzelne Änderungen speichern ────────────────────────────────────────────
   const handleSaveAll = async () => {
     setSaving(true)
     try {
@@ -375,8 +392,8 @@ export default function TeamsPage() {
           </div>
         </div>
 
-        {/* Liga-Name + Team-Count */}
-        <div className="flex items-center gap-3 mb-4">
+        {/* Liga-Name + Team-Count + Für alle Teams */}
+        <div className="flex items-center gap-3 mb-4 flex-wrap">
           <h2 className="text-xl font-bold text-slate-800">{leagueConfig.name}</h2>
           {!loading && (
             <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
@@ -389,6 +406,38 @@ export default function TeamsPage() {
             }`}>
               {teamStats.length} Teams
             </span>
+          )}
+          {!loading && teamStats.length > 0 && (
+            <div className="flex items-center gap-2 ml-auto">
+              <span className="text-xs sm:text-sm font-semibold text-slate-600 whitespace-nowrap">Für alle Teams:</span>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={allTeamsValue}
+                onChange={(e) => {
+                  const value = e.target.value
+                  if (value === '' || /^[0-9]+$/.test(value)) {
+                    const num = parseInt(value)
+                    if (value === '' || (num >= 0 && num <= 34)) {
+                      setAllTeamsValue(value)
+                    }
+                  }
+                }}
+                placeholder="–"
+                className="w-12 sm:w-16 px-2 py-1 text-xs sm:text-sm text-slate-900 font-medium border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-center bg-white"
+              />
+              <button
+                onClick={handleApplyToAllTeams}
+                disabled={allTeamsValue === ''}
+                className={`px-3 py-1 rounded-lg text-xs font-semibold transition whitespace-nowrap ${
+                  allTeamsValue !== ''
+                    ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                    : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                }`}
+              >
+                Übernehmen
+              </button>
+            </div>
           )}
         </div>
 
