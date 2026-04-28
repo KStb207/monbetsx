@@ -11,7 +11,7 @@ const LEAGUES = [
   { key: 'epl',     label: 'PL',      name: 'Premier League',  oddsKey: 'soccer_epl',                 season: '2025', color: 'purple', flag: '🏴󠁧󠁢󠁥󠁮󠁧󠁿', totalMatchdays: 38 },
   { key: 'la_liga', label: 'LaLiga',  name: 'La Liga',         oddsKey: 'soccer_spain_la_liga',       season: '2025', color: 'red',    flag: '🇪🇸', totalMatchdays: 38 },
   { key: 'serie_a', label: 'Ser A',   name: 'Serie A',         oddsKey: 'soccer_italy_serie_a',       season: '2025', color: 'green',  flag: '🇮🇹', totalMatchdays: 38 },
-  { key: 'ligue_1', label: 'Lig 1',   name: 'Ligue 1',         oddsKey: 'soccer_france_ligue_one',    season: '2025', color: 'indigo', flag: '🇫🇷', totalMatchdays: 38 },
+  { key: 'ligue_1', label: 'Lig 1',   name: 'Ligue 1',         oddsKey: 'soccer_france_ligue_one',    season: '2025', color: 'indigo', flag: '🇫🇷', totalMatchdays: 34 },
 ] as const
 
 type LeagueKey = typeof LEAGUES[number]['key']
