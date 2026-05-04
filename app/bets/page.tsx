@@ -107,6 +107,7 @@ export default function BetsPage() {
   // ─── Offen-Tab State ──────────────────────────────────────────────────────────
   const [offenMatches, setOffenMatches] = useState<Match[]>([])
   const [offenLoading, setOffenLoading] = useState(false)
+  const [incompleteLeagues, setIncompleteLeagues] = useState<Set<string>>(new Set())
 
   const leagueConfig = LEAGUES.find(l => l.key === activeLeague) ?? LEAGUES[0]
 
@@ -169,14 +170,11 @@ export default function BetsPage() {
     async function fetchOffenMatches() {
       setOffenLoading(true)
 
-      const now = new Date().toISOString()
-
-      // Alle zukünftigen unbeendeten Spiele laden
+      // Alle unbeendeten Spiele laden (inkl. laufende – kein Datumsfilter)
       const { data: allUpcoming } = await supabase
         .from('matches')
         .select(`*, home_team:teams!matches_home_team_id_fkey(id, name, short_name, odds_api_id, table_position), away_team:teams!matches_away_team_id_fkey(id, name, short_name, odds_api_id, table_position)`)
         .eq('is_finished', false)
-        .gt('match_date', now)
         .order('match_date', { ascending: true })
 
       if (!allUpcoming?.length) {
@@ -192,18 +190,28 @@ export default function BetsPage() {
         if (first) nextMatchdayPerLeague.set(league.key, first.matchday)
       })
 
-      // Nur den nächsten Spieltag je Liga betrachten
-      const relevantMatches = allUpcoming.filter(m => {
-        const nextMd = nextMatchdayPerLeague.get(m.league_shortcut)
-        return nextMd !== undefined && m.matchday === nextMd
-      })
+      // Prüfen ob der vorherige Spieltag je Liga noch läuft (verschobene Spiele)
+      const incompleteMatchdaySet = new Set<string>()
+      await Promise.all(LEAGUES.map(async league => {
+        const nextMd = nextMatchdayPerLeague.get(league.key)
+        if (!nextMd || nextMd <= 1) return
+        const { data: prevMatches } = await supabase
+          .from('matches')
+          .select('id, is_finished')
+          .eq('league_shortcut', league.key)
+          .eq('matchday', nextMd - 1)
+          .eq('season', LEAGUES.find(l => l.key === league.key)?.season ?? '2025')
+        if (prevMatches?.some(m => !m.is_finished)) {
+          incompleteMatchdaySet.add(league.key)
+        }
+      }))
 
       // Bereits gesetzte Wetten ausschließen
-      const matchIds = relevantMatches.map(m => m.id)
+      const matchIds = allUpcoming.map(m => m.id)
       const { data: betsData } = await supabase
         .from('bets').select('match_id, odds').in('match_id', matchIds).not('odds', 'is', null)
       const bettedMatchIds = new Set(betsData?.map(b => b.match_id) || [])
-      const unbetted = relevantMatches.filter(m => !bettedMatchIds.has(m.id))
+      const unbetted = allUpcoming.filter(m => !bettedMatchIds.has(m.id))
 
       // Team-Einsätze laden
       const teamIds = [...new Set([...unbetted.map(m => m.home_team_id), ...unbetted.map(m => m.away_team_id)])]
@@ -233,7 +241,7 @@ export default function BetsPage() {
         return count
       }
 
-      // Matches anreichern (inkl. Spiele ohne Einsatz für "Neue Teams"-Sektion)
+      // Matches anreichern und direkt filtern: nur Spiele mit Stakes oder aus unvollständigen Ligen
       const enriched: Match[] = unbetted.map(match => {
         const leagueSeason = LEAGUES.find(l => l.key === match.league_shortcut)?.season ?? '2025'
         const homeStakeData = stakesMap.get(`${match.home_team_id}-${match.matchday}-${leagueSeason}`) || { stake: 0, real_stake: 0 }
@@ -252,9 +260,14 @@ export default function BetsPage() {
           bet_payout: null,
           bet_result: null,
         }
-      })
+      }).filter(m =>
+        m.home_stake > 0 || m.away_stake > 0 ||
+        m.home_real_stake > 0 || m.away_real_stake > 0 ||
+        incompleteMatchdaySet.has(m.league_shortcut)
+      )
 
       setOffenMatches(enriched)
+      setIncompleteLeagues(incompleteMatchdaySet)
       setOffenLoading(false)
 
       // Keine offenen Spiele → automatisch zum Gesamt-Tab wechseln
@@ -630,10 +643,10 @@ export default function BetsPage() {
     useEffect(() => {
       if (match.odds) {
         setOddsInput(match.odds.toString())
-      } else {
-        setOddsInput(match.total_stake.toString())
+      } else if (effectiveOddsX) {
+        setOddsInput(effectiveOddsX.toString())
       }
-    }, [match.odds, match.total_stake])
+    }, [match.odds, effectiveOddsX])
 
     const handleAbort = async () => {
       try {
@@ -781,18 +794,29 @@ export default function BetsPage() {
             </div>
           </div>
 
-          {/* Tipico Quote */}
-          {effectiveOddsX ? (
-            <div className="flex items-center justify-between pt-2 border-t border-slate-100 mb-2 sm:mb-3">
-              <span className="text-xs sm:text-sm text-slate-600">Tipico Quote (X):</span>
-              <span className="text-sm sm:text-base font-bold text-slate-600">{effectiveOddsX.toFixed(2)}</span>
-            </div>
-          ) : (
-            <div className="flex items-center justify-between pt-2 border-t border-slate-100 mb-2 sm:mb-3">
-              <span className="text-xs sm:text-sm text-amber-700">⚠️ Keine Tipico-Quote</span>
-              <span className="text-xs sm:text-sm font-bold text-slate-600">Einsatz: {formatCurrency(match.total_stake)}</span>
-            </div>
-          )}
+          {/* Tipico Quote – editierbares Eingabefeld */}
+          <div className="flex items-center justify-between pt-2 border-t border-slate-100 mb-2 sm:mb-3 gap-2">
+            <span className="text-xs sm:text-sm text-slate-600 whitespace-nowrap">
+              {effectiveOddsX ? 'Tipico Quote (X):' : '⚠️ Quote (X):'}
+            </span>
+            {canBet ? (
+              <input
+                type="number"
+                step="0.01"
+                min="1"
+                value={oddsInput}
+                onChange={e => setOddsInput(e.target.value)}
+                className={`w-24 px-2 py-1 text-xs sm:text-sm font-bold text-right border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none ${
+                  effectiveOddsX ? 'border-slate-300 text-slate-700' : 'border-amber-300 text-amber-700 bg-amber-50'
+                }`}
+                placeholder="z.B. 3.40"
+              />
+            ) : (
+              <span className="text-sm sm:text-base font-bold text-slate-600">
+                {match.odds ? match.odds.toFixed(2) : (effectiveOddsX ? effectiveOddsX.toFixed(2) : '–')}
+              </span>
+            )}
+          </div>
 
           {/* Gesetzter Gesamteinsatz */}
           {match.bet_total_stake && (
@@ -858,17 +882,16 @@ export default function BetsPage() {
                       onClick={() => {
   const homeStake = parseFloat(homeStakeInput) || 0
   const awayStake = parseFloat(awayStakeInput) || 0
-
-  if (!effectiveOddsX) {
-    alert('Bitte zuerst eine Quote eingeben')
+  const quoteValue = parseFloat(oddsInput)
+  if (!quoteValue || quoteValue < 1) {
+    alert('Bitte eine gültige Quote eingeben (min. 1.00)')
     return
   }
   if (homeStake === 0 && awayStake === 0) {
     alert('Bitte gültigen Einsatz eingeben')
     return
   }
-
-  handleSaveOdds(match.id, effectiveOddsX, match, homeStake, awayStake)
+  handleSaveOdds(match.id, quoteValue, match, homeStake, awayStake)
 }}
                       disabled={savingMatchId === match.id}
                       className="px-3 sm:px-5 py-1.5 sm:py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-400 text-white rounded-lg transition font-semibold text-xs sm:text-sm whitespace-nowrap"
@@ -879,8 +902,8 @@ export default function BetsPage() {
                   {/* Zeile 3: Angezeigter Gesamteinsatz + Gewinn beider Teams */}
                   <div className="text-xs text-slate-500 text-right space-y-0.5">
                     <div>Gesamteinsatz: {formatCurrency((parseFloat(homeStakeInput) || 0) + (parseFloat(awayStakeInput) || 0))}</div>
-                    {effectiveOddsX && effectiveOddsX > 0 && (
-                      <div>Gewinn: {formatCurrency(((parseFloat(homeStakeInput) || 0) + (parseFloat(awayStakeInput) || 0)) * effectiveOddsX )}</div>
+                    {parseFloat(oddsInput) > 0 && (
+                      <div>Gewinn: {formatCurrency(((parseFloat(homeStakeInput) || 0) + (parseFloat(awayStakeInput) || 0)) * parseFloat(oddsInput))}</div>
                     )}
                   </div>
                 </div>
@@ -901,8 +924,13 @@ export default function BetsPage() {
                   <button
                     onClick={() => {
                       const homeStake = parseFloat(homeStakeInput) || 0
-                      if (effectiveOddsX && homeStake > 0) {
-                        handleSaveOdds(match.id, effectiveOddsX, match, homeStake, 0)
+                      const quoteValue = parseFloat(oddsInput)
+                      if (!quoteValue || quoteValue < 1) {
+                        alert('Bitte eine gültige Quote eingeben')
+                        return
+                      }
+                      if (homeStake > 0) {
+                        handleSaveOdds(match.id, quoteValue, match, homeStake, 0)
                       } else {
                         alert('Bitte gültigen Einsatz eingeben')
                       }
@@ -930,8 +958,13 @@ export default function BetsPage() {
                   <button
                     onClick={() => {
                       const awayStake = parseFloat(awayStakeInput) || 0
-                      if (effectiveOddsX && awayStake > 0) {
-                        handleSaveOdds(match.id, effectiveOddsX, match, 0, awayStake)
+                      const quoteValue = parseFloat(oddsInput)
+                      if (!quoteValue || quoteValue < 1) {
+                        alert('Bitte eine gültige Quote eingeben')
+                        return
+                      }
+                      if (awayStake > 0) {
+                        handleSaveOdds(match.id, quoteValue, match, 0, awayStake)
                       } else {
                         alert('Bitte gültigen Einsatz eingeben')
                       }
@@ -1194,7 +1227,10 @@ export default function BetsPage() {
             </div>
           ) : (() => {
             const mitEinsatz = offenMatches.filter(m => m.home_real_stake > 0 || m.away_real_stake > 0)
-            const neueTeams = offenMatches.filter(m => (m.home_stake > 0 || m.away_stake > 0) && m.home_real_stake === 0 && m.away_real_stake === 0)
+            const neueTeams = offenMatches.filter(m =>
+              ((m.home_stake > 0 || m.away_stake > 0) && m.home_real_stake === 0 && m.away_real_stake === 0) ||
+              (m.home_stake === 0 && m.away_stake === 0 && incompleteLeagues.has(m.league_shortcut))
+            )
             if (mitEinsatz.length === 0 && neueTeams.length === 0) {
               return (
                 <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 sm:p-8 text-center">
@@ -1212,7 +1248,14 @@ export default function BetsPage() {
                     </div>
                     <div className="grid gap-2 sm:gap-3 md:gap-4 sm:grid-cols-2 lg:grid-cols-3 mb-6">
                       {mitEinsatz.map(match => (
-                        <BetCard key={match.id} match={match} showLeagueFlag={true} />
+                        <div key={match.id}>
+                          {incompleteLeagues.has(match.league_shortcut) && (
+                            <div className="mb-1 px-2 py-1 bg-amber-50 border border-amber-200 rounded text-[10px] text-amber-700 font-medium">
+                              ⚠️ Spieltag noch nicht abgeschlossen
+                            </div>
+                          )}
+                          <BetCard match={match} showLeagueFlag={true} />
+                        </div>
                       ))}
                     </div>
                   </>
@@ -1228,7 +1271,14 @@ export default function BetsPage() {
                     </div>
                     <div className="grid gap-2 sm:gap-3 md:gap-4 sm:grid-cols-2 lg:grid-cols-3">
                       {neueTeams.map(match => (
-                        <BetCard key={match.id} match={match} showLeagueFlag={true} />
+                        <div key={match.id}>
+                          {incompleteLeagues.has(match.league_shortcut) && (
+                            <div className="mb-1 px-2 py-1 bg-amber-50 border border-amber-200 rounded text-[10px] text-amber-700 font-medium">
+                              ⚠️ Spieltag noch nicht abgeschlossen
+                            </div>
+                          )}
+                          <BetCard match={match} showLeagueFlag={true} />
+                        </div>
                       ))}
                     </div>
                   </>
